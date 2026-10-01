@@ -1,6 +1,6 @@
 import type { StoryboardDraft } from "@reel/core";
 import { describe, expect, it, vi } from "vitest";
-import { buildStoryboard, createPlanner, PlannerRefusedError, userPrompt, type DraftModel } from "./planner";
+import { buildStoryboard, createPlanner, PlannerRefusedError, ScriptMismatchError, systemPrompt, userPrompt, type DraftModel } from "./planner";
 import type { PlanRequest } from "./providers/types";
 
 const REQ: PlanRequest = {
@@ -116,5 +116,77 @@ describe("length enforcement", () => {
 
   it("states hard limits in the prompt", () => {
     expect(userPrompt(REQ)).toMatch(/Stay within 12 scenes and about 69 spoken words/);
+  });
+});
+
+const STYLE_REQ = (script?: string): PlanRequest => ({
+  ...REQ,
+  style: { name: "Myth vs Fact", brief: "Create a clear Hebrew reel… Misconception: X", engineNotes: ['The first scene has an overlay "מיתוס".'], ...(script ? { script } : {}) },
+});
+const scenesDraft = (scripts: string[]): StoryboardDraft => ({
+  title: "t",
+  scenes: scripts.map((script) => ({ script, visual: { kind: "graphic", prompt: "", motion: "none" }, overlays: [], transitionOut: "cut" })),
+});
+
+describe("style mode", () => {
+  it("keeps Custom's system prompt unchanged and adds engine rules only for styles", () => {
+    expect(systemPrompt({ style: false })).toBe(systemPrompt());
+    expect(systemPrompt({ style: true })).toMatch(/Never invent quotes, numbers, results/);
+    expect(systemPrompt()).not.toMatch(/Never invent quotes/);
+  });
+  it("puts the style brief, engine notes and draft mode into the user prompt", () => {
+    const u = userPrompt(STYLE_REQ());
+    expect(u).toMatch(/Style brief \(follow its structure, pacing and tone\):\nCreate a clear Hebrew reel/);
+    expect(u).toMatch(/Engine notes:\n- The first scene has an overlay "מיתוס"\./);
+    expect(u).toMatch(/No script was provided/);
+    expect(u).not.toMatch(/^Brief: /m);
+  });
+  it("custom prompt is unchanged", () => {
+    expect(userPrompt(REQ)).toMatch(/^Brief: 3 טיפים/);
+  });
+});
+
+describe("exact script mode", () => {
+  const script = "מיתוס נפוץ: צריך שמונה שעות שינה. האמת? זה משתנה מאדם לאדם.";
+  it("accepts a verbatim split in one call and states the mode", async () => {
+    const model = vi.fn<DraftModel>(async () => reply(scenesDraft(["מיתוס נפוץ: צריך שמונה שעות שינה.", "האמת? זה משתנה מאדם לאדם."])));
+    const sb = await createPlanner(model).plan(STYLE_REQ(script));
+    expect(model).toHaveBeenCalledTimes(1);
+    expect(model.mock.calls[0][0].user).toMatch(/Exact script mode/);
+    expect(sb.scenes.map((s) => s.script)).toEqual(["מיתוס נפוץ: צריך שמונה שעות שינה.", "האמת? זה משתנה מאדם לאדם."]);
+  });
+  it("repairs once with the diff, then succeeds", async () => {
+    const model = vi.fn<DraftModel>()
+      .mockResolvedValueOnce(reply(scenesDraft(["מיתוס נפוץ: צריך 8 שעות שינה.", "האמת? זה משתנה מאדם לאדם."])))
+      .mockResolvedValueOnce(reply(scenesDraft([script])));
+    await createPlanner(model).plan(STYLE_REQ(script));
+    expect(model).toHaveBeenCalledTimes(2);
+    expect(model.mock.calls[1][0].user).toMatch(/differ from the script/);
+  });
+  it("throws ScriptMismatchError after two altered answers", async () => {
+    const model = vi.fn<DraftModel>(async () => reply(scenesDraft(["משהו אחר לגמרי."])));
+    await expect(createPlanner(model).plan(STYLE_REQ(script))).rejects.toBeInstanceOf(ScriptMismatchError);
+    expect(model).toHaveBeenCalledTimes(2);
+  });
+  it("never repairs an over-long exact script (speech length is ignored)", async () => {
+    const long = Array.from({ length: 150 }, () => "מילה").join(" ");
+    const halves = [long.split(" ").slice(0, 75).join(" "), long.split(" ").slice(75).join(" ")];
+    const model = vi.fn<DraftModel>(async () => reply(scenesDraft(halves)));
+    const sb = await createPlanner(model).plan({ ...STYLE_REQ(long), targetDurationSec: 15 });
+    expect(model).toHaveBeenCalledTimes(1);
+    expect(sb.scenes).toHaveLength(2);
+  });
+  it("still repairs too many scenes, and returns a matching over-count second answer", async () => {
+    const words = Array.from({ length: 20 }, (_, i) => `w${i}`);
+    const model = vi.fn<DraftModel>(async () => reply(scenesDraft(words)));
+    const sb = await createPlanner(model).plan({ ...STYLE_REQ(words.join(" ")), targetDurationSec: 15 });
+    expect(model).toHaveBeenCalledTimes(2);
+    expect(model.mock.calls[1][0].user).toMatch(/at most 6 scenes \(you wrote 20\)/);
+    expect(sb.scenes).toHaveLength(20);
+  });
+  it("fails with the mismatch message when a single sentence cannot be split validly", async () => {
+    const huge = Array.from({ length: 90 }, () => "מילה").join(" "); // one scene would exceed 400 characters
+    const model = vi.fn<DraftModel>(async () => reply(scenesDraft([huge.slice(0, 200)])));
+    await expect(createPlanner(model).plan(STYLE_REQ(huge))).rejects.toThrow(/Couldn't split your script without changing words/);
   });
 });
