@@ -18,4 +18,17 @@ describe("scriptMatches", () => {
   it("treats NFC-equivalent text as equal", () => {
     expect(scriptMatches("\u00e9", ["e\u0301"]).ok).toBe(true);
   });
+  it("ignores invisible formatting marks", () => {
+    expect(scriptMatches("שלום\u200F עולם", ["שלום עולם"]).ok).toBe(true);
+  });
+  it("reports the differing characters with code points", () => {
+    const r = scriptMatches("ה״טיפ", ['ה"טיפ']);
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.diff).toMatch(/U\+05F4/);
+      expect(r.diff).toMatch(/U\+0022/);
+    }
+    const end = scriptMatches("abc", ["ab"]);
+    if (!end.ok) expect(end.diff).toMatch(/\(end\)/);
+  });
 });

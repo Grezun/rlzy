@@ -190,3 +190,32 @@ describe("exact script mode", () => {
     await expect(createPlanner(model).plan(STYLE_REQ(huge))).rejects.toThrow(/Couldn't split your script without changing words/);
   });
 });
+
+describe("long exact scripts", () => {
+  const long = Array.from({ length: 600 }, () => "מילה").join(" "); // 2999 chars
+  const cap = Math.ceil(long.length / 350);
+  const chunks = (n: number) => {
+    const w = long.split(" ");
+    const out: string[] = [];
+    for (let i = 0; i < w.length; i += n) out.push(w.slice(i, i + n).join(" "));
+    return out;
+  };
+  it("states the length-derived cap instead of a word target", () => {
+    const u = userPrompt({ ...STYLE_REQ(long), targetDurationSec: 15 });
+    expect(u).toMatch(new RegExp(`Use at most ${cap} scenes, each under 400 characters`));
+    expect(u).toMatch(/the script decides the actual length/);
+    expect(u).not.toMatch(/spoken words/);
+  });
+  it("accepts a valid split into cap scenes in one call", async () => {
+    const model = vi.fn<DraftModel>(async () => reply(scenesDraft(chunks(70))));
+    const sb = await createPlanner(model).plan({ ...STYLE_REQ(long), targetDurationSec: 15 });
+    expect(chunks(70)).toHaveLength(cap);
+    expect(sb.scenes).toHaveLength(cap);
+    expect(model).toHaveBeenCalledTimes(1);
+  });
+  it("rejects with ScriptMismatchError when scenes exceed 400 characters twice", async () => {
+    const model = vi.fn<DraftModel>(async () => reply(scenesDraft(chunks(90))));
+    await expect(createPlanner(model).plan({ ...STYLE_REQ(long), targetDurationSec: 15 })).rejects.toBeInstanceOf(ScriptMismatchError);
+    expect(model).toHaveBeenCalledTimes(2);
+  });
+});

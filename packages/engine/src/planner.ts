@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { lengthIssues, maxScenesFor, parseStoryboard, scriptMatches, StoryboardDraftSchema, targetWordsFor, type Storyboard, type StoryboardDraft } from "@reel/core";
+import { lengthIssues, maxScenesFor, parseStoryboard, normalizeScript, scriptMatches, StoryboardDraftSchema, targetWordsFor, type Storyboard, type StoryboardDraft } from "@reel/core";
 import type { PlanRequest, Planner } from "./providers/types";
 
 export type DraftModel = (req: { system: string; user: string }) => Promise<{
@@ -70,25 +70,42 @@ export function systemPrompt(opts: { style?: boolean } = {}): string {
   ].join("\n");
 }
 
+function exactScriptOf(req: PlanRequest): string | undefined {
+  const script = req.style?.script?.trim();
+  return script ? script : undefined;
+}
+
+function exactSceneCap(req: PlanRequest, script: string): number {
+  return Math.max(maxScenesFor(req.targetDurationSec), Math.ceil(normalizeScript(script).length / 350));
+}
+
 export function userPrompt(req: PlanRequest): string {
   const words = targetWordsFor(req.targetDurationSec, req.language);
   const scenes = Math.max(3, Math.round(req.targetDurationSec / (req.pacing === "punchy" ? 3 : 5)));
-  const exactScript = req.style?.script?.trim();
+  const exactScript = exactScriptOf(req);
   const head = req.style
     ? ["Style brief (follow its structure, pacing and tone):", req.style.brief, "", "Engine notes:", ...req.style.engineNotes.map((n) => `- ${n}`), ""]
     : [`Brief: ${req.brief}`];
   const tail = !req.style
     ? []
     : exactScript
-      ? ["Exact script mode: the voiceover must be exactly the script below, split into scenes at natural pauses. Do not add, remove, reorder or change any word or punctuation mark. Only choose where each scene starts. Ignore the spoken-word target above; the script decides the length.\nScript:\n" + req.style.script]
+      ? ["Exact script mode: the voiceover must be exactly the script below, split into scenes at natural pauses. Do not add, remove, reorder or change any word or punctuation mark. Only choose where each scene starts.\nScript:\n" + req.style.script]
       : ["No script was provided: write the voiceover yourself following the style brief."];
+  const lengthLines = exactScript
+    ? [
+        `Target length: ${req.targetDurationSec} seconds (the script decides the actual length).`,
+        `Use at most ${exactSceneCap(req, exactScript)} scenes, each under 400 characters of voiceover; split long sentences at commas if needed.`,
+      ]
+    : [
+        `Target length: ${req.targetDurationSec} seconds, about ${words} spoken words in total, about ${scenes} scenes.`,
+        `Stay within ${maxScenesFor(req.targetDurationSec)} scenes and about ${targetWordsFor(req.targetDurationSec, req.language)} spoken words in total.`,
+      ];
   return [
     ...head,
     `Language of the voiceover and overlays: ${req.language === "he" ? "Hebrew" : "English"}.`,
-    `Target length: ${req.targetDurationSec} seconds, about ${words} spoken words in total, about ${scenes} scenes.`,
-    `Stay within ${maxScenesFor(req.targetDurationSec)} scenes and about ${targetWordsFor(req.targetDurationSec, req.language)} spoken words in total.`,
+    ...lengthLines,
     `Pacing: ${req.pacing}.`,
-    "Keep each scene's voiceover under 400 characters.",
+    ...(exactScript ? [] : ["Keep each scene's voiceover under 400 characters."]),
     ...tail,
   ].join("\n");
 }
@@ -121,16 +138,16 @@ function attempt(result: Awaited<ReturnType<DraftModel>>, req: PlanRequest): Att
   if (result.stopReason === "refusal") throw new PlannerRefusedError();
   if (!result.draft) return { ok: false, error: "The output did not match the storyboard schema." };
   let storyboard: Storyboard;
+  const exact = exactScriptOf(req);
   try {
     storyboard = buildStoryboard(result.draft, req);
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: err instanceof Error ? err.message : String(err), ...(exact ? { mismatch: true } : {}) };
   }
-  const exact = req.style?.script?.trim() ? req.style.script : undefined;
   if (exact) {
     const match = scriptMatches(exact, storyboard.scenes.map((s) => s.script));
     if (!match.ok) return { ok: false, error: match.diff, mismatch: true };
-    const max = maxScenesFor(storyboard.targetDurationSec);
+    const max = exactSceneCap(req, exact);
     return storyboard.scenes.length > max
       ? { ok: false, error: `Use at most ${max} scenes (you wrote ${storyboard.scenes.length}). Merge neighbouring scenes; keep every word.`, storyboard }
       : { ok: true, storyboard };
@@ -164,7 +181,7 @@ export function createPlanner(model: DraftModel): Planner {
       // Valid but still over length: return it — the editor shows the length warning.
       const fallback = second.storyboard ?? firstAttempt.storyboard;
       if (fallback) return fallback;
-      if (second.mismatch || firstAttempt.mismatch) throw new ScriptMismatchError(second.error);
+      if (second.mismatch || firstAttempt.mismatch) throw new ScriptMismatchError(second.mismatch ? second.error : firstAttempt.error);
       throw new Error(`Claude returned an invalid storyboard twice:\n${second.error}`);
     },
   };
