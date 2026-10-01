@@ -120,6 +120,7 @@ export type Database = {
           language: string
           owner_id: string
           status: string
+          style_id: string | null
           title: string
           updated_at: string
         }
@@ -130,6 +131,7 @@ export type Database = {
           language: string
           owner_id?: string
           status?: string
+          style_id?: string | null
           title: string
           updated_at?: string
         }
@@ -140,6 +142,7 @@ export type Database = {
           language?: string
           owner_id?: string
           status?: string
+          style_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -152,6 +155,7 @@ export type Database = {
           preview_path: string
           project_id: string
           reel_path: string
+          srt_path: string | null
           storyboard_id: string
           storyboard_version: number
           thumbnail_path: string
@@ -163,6 +167,7 @@ export type Database = {
           preview_path: string
           project_id: string
           reel_path: string
+          srt_path?: string | null
           storyboard_id: string
           storyboard_version: number
           thumbnail_path: string
@@ -174,6 +179,7 @@ export type Database = {
           preview_path?: string
           project_id?: string
           reel_path?: string
+          srt_path?: string | null
           storyboard_id?: string
           storyboard_version?: number
           thumbnail_path?: string
