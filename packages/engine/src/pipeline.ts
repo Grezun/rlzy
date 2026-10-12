@@ -16,6 +16,7 @@ import {
 import { inputHash } from "@reel/core/hash";
 import { conformVideo, exportDeliverable, fitDuration, normalizeLoudness, probe, thumbnail, trimTrailingSilence } from "@reel/media";
 import { renderReel } from "@reel/video/render";
+import { buildSrt } from "@reel/video/srt";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
@@ -37,7 +38,7 @@ export type GeneratedAssets = {
   spans: SceneSpan[];
   visuals: Record<string, { kind: "video" | "image"; asset: StoredAsset }>;
 };
-export type RenderOutputs = { timeline: Timeline; master: string; reel: string; preview: string; thumbnail: string };
+export type RenderOutputs = { timeline: Timeline; master: string; reel: string; preview: string; thumbnail: string; srt: string };
 
 /** Cache keys. Bump a step's `v` when its processing changes so old results are not reused. */
 export const hashes = {
@@ -222,7 +223,9 @@ export async function renderAndExport(
     const thumb = join(outDir, "thumbnail.jpg");
     await thumbnail(master, thumb, Math.min(1, timeline.durationInFrames / 30 / 2));
     emit({ type: "step", step: "export", status: "done" });
-    return { timeline, master, reel, preview, thumbnail: thumb };
+    const srt = join(outDir, "reel.srt");
+    await writeFile(srt, buildSrt(timeline.captions.words));
+    return { timeline, master, reel, preview, thumbnail: thumb, srt };
   } finally {
     await server.close();
   }

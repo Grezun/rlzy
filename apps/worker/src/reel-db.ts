@@ -14,7 +14,7 @@ export interface ReelDb {
     projectId: string;
     storyboardId: string;
     storyboardVersion: number;
-    paths: { reel: string; preview: string; thumbnail: string };
+    paths: { reel: string; preview: string; thumbnail: string; srt: string };
     timeline: Timeline;
   }): Promise<void>;
 }
@@ -66,6 +66,7 @@ export class SupabaseReelDb implements ReelDb {
       reel_path: input.paths.reel,
       preview_path: input.paths.preview,
       thumbnail_path: input.paths.thumbnail,
+      srt_path: input.paths.srt,
       timeline: input.timeline as unknown as Json,
     });
     check("render insert", error);

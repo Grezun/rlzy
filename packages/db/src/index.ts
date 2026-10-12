@@ -51,5 +51,5 @@ export function applyPipelineEvent(progress: JobProgress, event: PipelineEvent):
 
 export function renderPaths(projectId: string, version: number) {
   const base = `${projectId}/v${version}`;
-  return { reel: `${base}/reel.mp4`, preview: `${base}/preview.mp4`, thumbnail: `${base}/thumbnail.jpg` };
+  return { reel: `${base}/reel.mp4`, preview: `${base}/preview.mp4`, thumbnail: `${base}/thumbnail.jpg`, srt: `${base}/reel.srt` };
 }

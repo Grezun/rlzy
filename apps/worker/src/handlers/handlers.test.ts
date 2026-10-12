@@ -114,10 +114,11 @@ describe("generate handler", () => {
     const { reports, ctx: c } = ctx();
     const outcome = await s.generate()(makeJob({ type: "generate", project_id: "p1", payload: { storyboardId: record.id } }), c);
     expect(outcome.status).toBe("done");
-    expect([...s.blobs.objects.keys()].sort()).toEqual(["renders/p1/v1/preview.mp4", "renders/p1/v1/reel.mp4", "renders/p1/v1/thumbnail.jpg"]);
+    expect([...s.blobs.objects.keys()].sort()).toEqual(["renders/p1/v1/preview.mp4", "renders/p1/v1/reel.mp4", "renders/p1/v1/reel.srt", "renders/p1/v1/thumbnail.jpg"]);
     expect(s.db.renders).toHaveLength(1);
     const render = s.db.renders[0];
     expect(render).toMatchObject({ projectId: "p1", storyboardId: record.id, storyboardVersion: 1 });
+    expect(render.paths.srt).toBe("p1/v1/reel.srt");
     expect(render.timeline.audio.voiceUrl).toMatch(/^asset:/);
     expect(render.timeline.clips.filter((c) => c.kind !== "graphic").every((c) => c.src?.startsWith("asset:"))).toBe(true);
     expect(s.db.projectStatus.get("p1")?.status).toBe("rendered");
