@@ -5,7 +5,7 @@ import { createThrottledReporter, processNextJob, runWorker } from "./loop";
 import { FakeJobQueue, makeJob } from "./testing/fakes";
 
 const noop = async () => ({ status: "done" as const });
-const handlers = (over: Partial<Handlers> = {}): Handlers => ({ plan: noop, generate: noop, ingest_footage: noop, plan_footage: noop, ...over });
+const handlers = (over: Partial<Handlers> = {}): Handlers => ({ plan: noop, generate: noop, ingest_footage: noop, plan_footage: noop, generate_footage: noop, ...over });
 const opts = { workerId: "w1", heartbeatMs: 5, progressThrottleMs: 5, finishRetryDelaysMs: [0, 0] };
 
 describe("processNextJob", () => {

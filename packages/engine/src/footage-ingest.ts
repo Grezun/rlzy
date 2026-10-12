@@ -52,13 +52,7 @@ export async function ingestFootage(originalPath: string, deps: IngestDeps): Pro
   if (!info.video) throw new FootageInputError("This file has no video track. Upload an MP4 or MOV video.");
   if (!info.audio) throw new FootageInputError("This video has no sound. Upload a video where you speak.");
   if (info.durationSec > FOOTAGE_MAX_SEC_INGEST) throw new FootageInputError(`This video is ${formatMinSec(info.durationSec)} long. Trim it to 3:00 or less and upload it again.`);
-  const originalSha = await sha256File(originalPath);
-  const working = await cached(store, footageHashes.working(originalSha), async () => {
-    log("ingest: making the 1080×1920 working copy");
-    const out = tmp("working.mp4");
-    await conformVideo(originalPath, out, { keepAudio: true });
-    return { path: out, ext: "mp4", meta: { kind: "video", provider: "ffmpeg", reproducible: true, extra: { originalSha } } };
-  });
+  const working = await workingCopy(store, originalPath, await sha256File(originalPath), deps.tmpDir, log);
   const durationMs = Math.round((await probe(working.path)).durationSec * 1000);
   emit({ type: "step", step: "conform", status: "done" });
 
@@ -90,8 +84,42 @@ export async function ingestFootage(originalPath: string, deps: IngestDeps): Pro
   return { source: { assetId: working.hash, durationMs, transcriptAssetId: transcriptAsset.hash, faceTrackAssetId: faces.hash }, transcript };
 }
 
-export async function loadFootageInputs(store: AssetStore, source: FootageSource): Promise<FootageInputs> {
-  const [working, transcriptAsset, facesAsset] = await Promise.all([store.get(source.assetId), store.get(source.transcriptAssetId), store.get(source.faceTrackAssetId)]);
-  if (!working || !transcriptAsset || !facesAsset) throw new Error("The prepared video is missing from storage. Upload the video again.");
+/** The conformed 1080×1920 working copy, keyed by the original's hash (ffmpeg only, so remaking it is free). */
+async function workingCopy(store: AssetStore, originalPath: string, originalSha: string, tmpDir: string, log: (m: string) => void): Promise<StoredAsset> {
+  return cached(store, footageHashes.working(originalSha), async () => {
+    log("ingest: making the 1080×1920 working copy");
+    await mkdir(tmpDir, { recursive: true });
+    const out = join(tmpDir, "working.mp4");
+    await conformVideo(originalPath, out, { keepAudio: true });
+    return { path: out, ext: "mp4", meta: { kind: "video", provider: "ffmpeg", reproducible: true, extra: { originalSha } } };
+  });
+}
+
+/** Downloads the original upload into `destDir`; null when it is gone. */
+export type OriginalFetch = (destDir: string) => Promise<string | null>;
+/** How to re-make a working copy that is neither on this machine nor in storage (its mirror is best-effort). */
+export type RemakeWorking = { original: OriginalFetch; tmpDir: string; log: (m: string) => void };
+
+const MISSING = "The prepared video is missing from storage. Upload the video again.";
+
+export async function loadFootageInputs(store: AssetStore, source: FootageSource, remake?: RemakeWorking): Promise<FootageInputs> {
+  const [found, transcriptAsset, facesAsset] = await Promise.all([store.get(source.assetId), store.get(source.transcriptAssetId), store.get(source.faceTrackAssetId)]);
+  if (!transcriptAsset || !facesAsset) throw new Error(MISSING);
+  const working = found ?? (remake ? await remakeWorking(store, source.assetId, remake) : null);
+  if (!working) throw new Error(MISSING);
   return { working, transcriptAsset, transcript: await readJson(transcriptAsset, TranscriptSchema), faceTrack: await readJson(facesAsset, FaceTrackSchema) };
+}
+
+async function remakeWorking(store: AssetStore, assetId: string, remake: RemakeWorking): Promise<StoredAsset | null> {
+  await mkdir(remake.tmpDir, { recursive: true });
+  const original = await remake.original(remake.tmpDir);
+  if (!original) return null;
+  const originalSha = await sha256File(original);
+  // Only the exact upload this plan was made from conforms to the same working copy.
+  if (footageHashes.working(originalSha) !== assetId) {
+    remake.log(`working copy ${assetId} is missing and the stored upload no longer matches it`);
+    return null;
+  }
+  remake.log("the working copy is missing here and in storage: re-making it from the original upload");
+  return workingCopy(store, original, originalSha, remake.tmpDir, remake.log);
 }

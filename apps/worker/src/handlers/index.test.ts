@@ -18,7 +18,7 @@ async function setup(mode: "real" | "fake") {
   const handlers = buildHandlers({
     mode, planner: providers.planner, providers, store: new FileAssetStore(config.cacheDir), blobs: new InMemoryBlobStore(), db,
     voices: { he: "voice-he" }, voiceModelId: "eleven_v4", spendCapUsd: 10, costModels: costModels(config),
-    transcriber: providers.transcriber, faceTracker: noFaceTracker, footagePlanner: providers.footagePlanner,
+    transcriber: providers.transcriber, faceTracker: noFaceTracker, footagePlanner: providers.footagePlanner, sfxDir: null,
   });
   return { providers, db, handlers };
 }

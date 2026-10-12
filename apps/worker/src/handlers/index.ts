@@ -2,6 +2,7 @@ import type { Handlers } from "../loop";
 import { FAKE_VOICE_ID } from "../fake-voice";
 import { createIngestFootageHandler, createPlanFootageHandler, type FootageHandlerDeps } from "./footage";
 import { createGenerateHandler, type GenerateHandlerDeps } from "./generate";
+import { createGenerateFootageHandler } from "./generate-footage";
 import { createPlanHandler, type PlanHandlerDeps } from "./plan";
 
 export type BuildHandlersDeps = {
@@ -18,6 +19,8 @@ export type BuildHandlersDeps = {
   transcriber: FootageHandlerDeps["transcriber"];
   faceTracker: FootageHandlerDeps["faceTracker"];
   footagePlanner: FootageHandlerDeps["footagePlanner"];
+  /** Sound-effect pack directory, or null when this worker has none (reels render without them, with a note). */
+  sfxDir: string | null;
 };
 
 /** Fake workers only plan and generate with the fake voice; real workers refuse storyboards that use it. */
@@ -38,5 +41,10 @@ export function buildHandlers(deps: BuildHandlersDeps): Handlers {
     }),
     ingest_footage: createIngestFootageHandler(footage),
     plan_footage: createPlanFootageHandler(footage),
+    // Same models as ingest: a plan built on another worker's transcript or face track (fake vs real) is refused before any spend.
+    generate_footage: createGenerateFootageHandler({
+      music: deps.providers.music, store: deps.store, blobs: deps.blobs, db: deps.db, sfxDir: deps.sfxDir, spendCapUsd: deps.spendCapUsd,
+      inputModels: { transcriber: deps.transcriber.model, faceTracker: deps.faceTracker.model },
+    }),
   };
 }

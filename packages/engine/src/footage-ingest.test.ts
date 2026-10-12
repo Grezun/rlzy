@@ -1,6 +1,6 @@
 import { faceHelperAvailable, FIXTURE_TALKING_HEAD, makeTestVideo, probe, runFfmpeg } from "@reel/media";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -128,4 +128,30 @@ describe("ingestFootage (real ffmpeg, fake Scribe, no face helper)", () => {
     },
     300_000,
   );
+  it("re-makes a lost working copy from the original upload (free and deterministic), and refuses a different original", async () => {
+    const { dir, providers, deps } = await setup();
+    await makeTestVideo(join(dir, "up.mp4"), { durationSec: 3, width: 720, height: 1280, withAudio: true });
+    const { source } = await ingestFootage(join(dir, "up.mp4"), deps);
+    // Lost on this machine and never mirrored: the store no longer knows the working copy.
+    await unlink(join(deps.store.root, `${source.assetId}.json`));
+    await expect(loadFootageInputs(deps.store, source)).rejects.toThrow(/Upload the video again/);
+    const original = async (dest: string) => {
+      await copyFile(join(dir, "up.mp4"), join(dest, "original.mp4"));
+      return join(dest, "original.mp4");
+    };
+    const remake = { original, tmpDir: join(dir, "remake"), log: () => {} };
+    const inputs = await loadFootageInputs(deps.store, source, remake);
+    expect(inputs.working.hash).toBe(source.assetId);
+    expect((await probe(inputs.working.path)).video).toMatchObject({ width: 1080, height: 1920 });
+    expect(providers.calls.transcribe).toBe(1);
+
+    await unlink(join(deps.store.root, `${source.assetId}.json`));
+    await makeTestVideo(join(dir, "other.mp4"), { durationSec: 2, width: 720, height: 1280, withAudio: true });
+    const other = async (dest: string) => {
+      await copyFile(join(dir, "other.mp4"), join(dest, "other.mp4"));
+      return join(dest, "other.mp4");
+    };
+    await expect(loadFootageInputs(deps.store, source, { ...remake, original: other })).rejects.toThrow(/Upload the video again/);
+    await expect(loadFootageInputs(deps.store, source, { ...remake, original: async () => null })).rejects.toThrow(/Upload the video again/);
+  }, 300_000);
 });

@@ -1,5 +1,5 @@
 import type { Database } from "@reel/db";
-import { costModels, createFaceTracker, createFootagePlannerFor, createPlannerFor, createProviders, FileAssetStore, loadConfig, loadEnvFile } from "@reel/engine";
+import { costModels, createFaceTracker, createFootagePlannerFor, createPlannerFor, createProviders, FileAssetStore, loadConfig, loadEnvFile, resolveSfxDir } from "@reel/engine";
 import { assertFfmpegAvailable } from "@reel/media";
 import { createClient } from "@supabase/supabase-js";
 import { mkdtemp } from "node:fs/promises";
@@ -24,6 +24,8 @@ const workDir = await mkdtemp(join(tmpdir(), "reel-worker-"));
 const fake = env.providers === "fake";
 const blobs = new SupabaseBlobStore(sb);
 const providers = createProviders(config, workDir, { log });
+const sfxDir = await resolveSfxDir(env.providers, config.cacheDir);
+log(sfxDir ? `sound effects: ${sfxDir}` : "sound effects: not installed (reels render without them)");
 
 const handlers = buildHandlers({
   mode: fake ? "fake" : "real",
@@ -39,6 +41,7 @@ const handlers = buildHandlers({
   transcriber: providers.transcriber,
   faceTracker: createFaceTracker(fake ? "fake" : "real"),
   footagePlanner: createFootagePlannerFor(config, workDir),
+  sfxDir,
 });
 
 const controller = new AbortController();

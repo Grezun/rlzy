@@ -1,5 +1,5 @@
 import { assertWithinCap, assetSrc, estimateCost, parseStoryboard, SceneFailuresError, type PipelineEvent } from "@reel/core";
-import { applyPipelineEvent, BUCKETS, emptyProgress, GenerateJobPayloadSchema, renderPaths } from "@reel/db";
+import { applyPipelineEvent, emptyProgress, GenerateJobPayloadSchema } from "@reel/db";
 import { buildTimeline, generateAssets, renderAndExport, type AssetStore, type GeneratedAssets, type Providers } from "@reel/engine";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { JobHandler } from "../loop";
 import type { ReelDb } from "../reel-db";
 import type { BlobStore } from "../storage";
+import { uploadRender } from "./render-upload";
 
 export type GenerateHandlerDeps = {
   providers: Providers;
@@ -64,11 +65,7 @@ export function createGenerateHandler(deps: GenerateHandlerDeps): JobHandler {
       }
 
       const out = await renderAndExport(sb, gen, pipelineDeps, join(tmpDir, "out"));
-      const paths = renderPaths(job.project_id, record.version);
-      await deps.blobs.upload(BUCKETS.renders, paths.reel, out.reel, "video/mp4");
-      await deps.blobs.upload(BUCKETS.renders, paths.preview, out.preview, "video/mp4");
-      await deps.blobs.upload(BUCKETS.renders, paths.thumbnail, out.thumbnail, "image/jpeg");
-      await deps.blobs.upload(BUCKETS.renders, paths.srt, out.srt, "application/x-subrip");
+      const paths = await uploadRender(deps.blobs, job.project_id, record.version, out);
       await deps.db.insertRender({
         projectId: job.project_id,
         storyboardId,

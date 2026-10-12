@@ -13,3 +13,4 @@ export * from "./footage-planner";
 export * from "./face-tracker";
 export * from "./footage-ingest";
 export { serveDir } from "./serve";
+export * from "./footage-generate";
