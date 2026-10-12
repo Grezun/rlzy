@@ -1,7 +1,8 @@
+import type { Database } from "@reel/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CreateReelDeps } from "./create-reel";
 
-export function reelDeps(supabase: SupabaseClient): CreateReelDeps {
+export function reelDeps(supabase: SupabaseClient<Database>): CreateReelDeps {
   return {
     async insertProject(input) {
       const { data, error } = await supabase

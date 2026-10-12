@@ -24,3 +24,10 @@ export function parseStyleForm(styleId: string, fd: FormData): { ok: true; form:
   if (!parsed.success) return { ok: false, errors: parsed.error.issues.map((i) => `${i.path.join(".") || "form"}: ${i.message}`) };
   return { ok: true, form: parsed.data, title };
 }
+
+/** The text values the user submitted, echoed back on a failed submit so React's form reset does not wipe them. */
+export function submittedValues(fd: FormData): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of fd.entries()) if (typeof v === "string") out[k] = v;
+  return out;
+}
