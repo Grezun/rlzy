@@ -1,6 +1,6 @@
 "use server";
 import type { EditPlan } from "@reel/core";
-import { IngestFootageJobPayloadSchema } from "@reel/db";
+import { IngestFootageJobPayloadSchema, type ProjectStatus } from "@reel/db";
 import { approvePlan, newPlanVersion, replan, retryFootageGenerate, retryIngest, savePlan, type PlanWriteDeps } from "@/lib/approve-plan";
 import { insertJob, runProjectAction, storyboardDeps } from "@/lib/storyboard-deps";
 import { loadTranscript } from "@/lib/transcript";
@@ -18,6 +18,11 @@ function deps(sb: Client): PlanWriteDeps {
       if (error) throw new Error(`job lookup: ${error.message}`);
       const parsed = IngestFootageJobPayloadSchema.safeParse(data?.payload);
       return parsed.success ? parsed.data : null;
+    },
+    async projectStatus(projectId) {
+      const { data, error } = await sb.from("projects").select("status").eq("id", projectId).maybeSingle();
+      if (error) throw new Error(`project lookup: ${error.message}`);
+      return (data?.status as ProjectStatus | undefined) ?? null;
     },
   };
 }

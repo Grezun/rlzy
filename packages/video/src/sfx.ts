@@ -26,3 +26,9 @@ export function sfxFileIn(dir: string, name: SfxName): string | null {
 }
 
 export const missingSfx = (dir: string): SfxName[] => SFX_NAMES.filter((n) => !sfxFileIn(dir, n));
+
+/** What `sfx:generate` would pay for in `dir`: only the missing sounds, so a rerun never re-pays existing files. */
+export function sfxToGenerate(dir: string): { names: SfxName[]; totalSec: number } {
+  const names = missingSfx(dir);
+  return { names, totalSec: names.reduce((s, n) => s + SFX_PROMPTS[n].durationSec, 0) };
+}

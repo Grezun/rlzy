@@ -133,12 +133,16 @@ export class ScribeTranscriber implements Transcriber {
   }
 }
 
+const isRateLimited = (err: unknown) => err instanceof ElevenLabsError && err.statusCode === 429;
+
 export class ElevenLabsMusic implements MusicGen {
   readonly model = "elevenlabs/music";
   constructor(private readonly api: ElevenLabsFootageApi, private readonly opts: RetryOpts = {}) {}
   async compose({ prompt, durationMs }: { prompt: string; durationMs: number }) {
     const lengthMs = Math.min(MUSIC_MAX_MS, Math.max(MUSIC_MIN_MS, Math.round(durationMs)));
-    const audio = await withRetry(() => this.api.music(prompt, lengthMs), retryWith(this.opts));
+    // Music is paid per generation: a 5xx or dropped connection may arrive after it was billed,
+    // so only a 429 (request not served) is retried. Everything else fails after one call.
+    const audio = await withRetry(() => this.api.music(prompt, lengthMs), { ...retryWith(this.opts), isTransient: isRateLimited });
     if (audio.length === 0) throw new PermanentProviderError("ElevenLabs returned empty music", "elevenlabs");
     return { audio, ext: "mp3" as const };
   }

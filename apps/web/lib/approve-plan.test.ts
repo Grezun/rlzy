@@ -20,6 +20,7 @@ function deps(over: Partial<PlanWriteDeps> = {}): PlanWriteDeps & { queued: unkn
     activeJobCount: vi.fn(async () => 0),
     hasDoneGenerate: vi.fn(async () => false),
     maxVersion: vi.fn(async () => 1),
+    projectStatus: vi.fn(async () => "failed" as const),
     ingestPayload: vi.fn(async () => ({ storagePath: "footage/x/source.mp4", settings: { language: "he" as const, targetDurationSec: 15 as const, notes: "קצר" } })),
     insertDraft: vi.fn(async (_p, _v, json) => { inserted.push(json); }),
     ...over,
@@ -107,9 +108,22 @@ describe("replan / retryIngest", () => {
     });
     expect([...approved.queued, ...long.queued]).toEqual([]);
   });
-  it("re-queues the last ingest payload after a failed ingest", async () => {
-    const d = deps();
+  it("re-queues the last ingest payload after a failed ingest (failed project, no plan yet)", async () => {
+    const d = deps({ maxVersion: async () => 0 });
     expect(await retryIngest(d, { projectId: "p1" })).toEqual({ ok: true });
     expect(d.queued[0]).toEqual(["ingest_footage", { storagePath: "footage/x/source.mp4", settings: { language: "he", targetDurationSec: 15, notes: "קצר" } }]);
+  });
+  it("refuses to re-run ingest once an edit plan exists, queuing nothing", async () => {
+    const d = deps({ maxVersion: async () => 1 });
+    expect(await retryIngest(d, { projectId: "p1" })).toEqual({ ok: false, errors: ["This video already has an edit plan. Open it instead of re-running the upload steps."] });
+    expect(d.queued).toEqual([]);
+    expect(d.setProjectStatus).not.toHaveBeenCalled();
+  });
+  it("refuses unless the project failed, queuing nothing", async () => {
+    for (const status of ["draft", "planning", "generating", "rendered", "needs_attention"] as const) {
+      const d = deps({ maxVersion: async () => 0, projectStatus: async () => status });
+      expect(await retryIngest(d, { projectId: "p1" })).toEqual({ ok: false, errors: ["Only a failed upload can be retried."] });
+      expect(d.queued).toEqual([]);
+    }
   });
 });

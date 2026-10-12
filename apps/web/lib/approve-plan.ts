@@ -1,5 +1,5 @@
 import { EmptyEditError, footageDurationMs, parseEditPlan, withFootageEstimate, type EditPlan, type FootageSettings, type Word } from "@reel/core";
-import { PlanFootageJobPayloadSchema, type IngestFootagePayload } from "@reel/db";
+import { PlanFootageJobPayloadSchema, type IngestFootagePayload, type ProjectStatus } from "@reel/db";
 import { houseStyle } from "@reel/video/house-style";
 import { ACTIVE_JOB_ERROR, approveDraft, copyAsNewDraft, fail, retryApproved, wrongProjectError, writeDraft, type DocKind, type DraftWriteDeps, type Result } from "./approve";
 import { checkEditPlan } from "./edit-plan-edit";
@@ -16,6 +16,8 @@ export interface PlanWriteDeps extends Omit<DraftWriteDeps<EditPlan>, "queueGene
   queueJob(projectId: string, type: "generate_footage" | "plan_footage" | "ingest_footage", payload: object): Promise<void>;
   /** Payload of the project's latest ingest_footage job (the user's original settings), or null. */
   ingestPayload(projectId: string): Promise<IngestFootagePayload | null>;
+  /** The project's current status, or null if it isn't visible. */
+  projectStatus(projectId: string): Promise<ProjectStatus | null>;
 }
 
 const asDraftDeps = (deps: PlanWriteDeps): DraftWriteDeps<EditPlan> => ({
@@ -102,9 +104,14 @@ export async function replan(deps: PlanWriteDeps, input: Ids & { instruction: st
   return { ok: true };
 }
 
-/** After a failed ingest (or a failed first plan): run ingest again. Finished steps are cached, so they cost nothing again. */
+/**
+ * After a failed ingest (or a failed first plan): run ingest again. Finished steps are cached, so they cost nothing again.
+ * Only for a failed project that has no edit plan yet: otherwise a stale tab would pay for a new plan and reset the project.
+ */
 export async function retryIngest(deps: PlanWriteDeps, input: { projectId: string }): Promise<Result> {
   if ((await deps.activeJobCount(input.projectId)) > 0) return fail(ACTIVE_JOB_ERROR);
+  if ((await deps.maxVersion(input.projectId)) > 0) return fail("This video already has an edit plan. Open it instead of re-running the upload steps.");
+  if ((await deps.projectStatus(input.projectId)) !== "failed") return fail("Only a failed upload can be retried.");
   const payload = await deps.ingestPayload(input.projectId);
   if (!payload) return fail("There is no uploaded video to retry. Upload it again.");
   await deps.queueJob(input.projectId, "ingest_footage", payload);

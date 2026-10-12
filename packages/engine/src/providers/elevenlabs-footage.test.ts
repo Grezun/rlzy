@@ -63,4 +63,26 @@ describe("ElevenLabsMusic", () => {
     const api: ElevenLabsFootageApi = { scribe: vi.fn(), music: async () => Buffer.alloc(0) };
     await expect(new ElevenLabsMusic(api, noSleep).compose({ prompt: "x", durationMs: 5000 })).rejects.toThrow(/empty music/);
   });
+  it("never retries a 5xx (generation may already be billed): exactly one call", async () => {
+    const api: ElevenLabsFootageApi = { scribe: vi.fn(), music: vi.fn(async () => { throw new ElevenLabsError({ message: "gateway timeout", statusCode: 504 }); }) };
+    await expect(new ElevenLabsMusic(api, noSleep).compose({ prompt: "x", durationMs: 5000 })).rejects.toThrow(/gateway timeout/);
+    expect(api.music).toHaveBeenCalledTimes(1);
+  });
+  it("never retries a dropped connection: exactly one call", async () => {
+    const api: ElevenLabsFootageApi = { scribe: vi.fn(), music: vi.fn(async () => { throw Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }); }) };
+    await expect(new ElevenLabsMusic(api, noSleep).compose({ prompt: "x", durationMs: 5000 })).rejects.toThrow(/socket hang up/);
+    expect(api.music).toHaveBeenCalledTimes(1);
+  });
+  it("still retries a 429 (request not served)", async () => {
+    let calls = 0;
+    const api: ElevenLabsFootageApi = {
+      scribe: vi.fn(),
+      music: vi.fn(async () => {
+        if (++calls === 1) throw new ElevenLabsError({ message: "rate limited", statusCode: 429 });
+        return Buffer.from("mp3");
+      }),
+    };
+    await new ElevenLabsMusic(api, noSleep).compose({ prompt: "x", durationMs: 5000 });
+    expect(api.music).toHaveBeenCalledTimes(2);
+  });
 });
