@@ -18,3 +18,5 @@ export * from "./beats";
 export * from "./footage/style";
 export * from "./footage/face-track";
 export * from "./footage/shots";
+export * from "./footage/captions";
+export * from "./footage/compile";

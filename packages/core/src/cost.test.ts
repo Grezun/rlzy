@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertWithinCap, estimateCost, estimateSceneSeconds, videoBillSeconds } from "./cost";
+import { assertWithinCap, DEFAULT_COST_TABLE, estimateCost, estimateFootageCost, estimateReelSeconds, estimateSceneSeconds, videoBillSeconds } from "./cost";
 import { SpendCapError, UnknownCostModelError } from "./errors";
 import { parseStoryboard } from "./schema/storyboard";
 import { validStoryboard } from "./testing/fixtures";
@@ -45,5 +45,28 @@ describe("cost", () => {
   it("assertWithinCap throws SpendCapError over the cap", () => {
     expect(() => assertWithinCap({ totalUsd: 11, lines: [] }, 10)).toThrow(SpendCapError);
     expect(() => assertWithinCap({ totalUsd: 9, lines: [] }, 10)).not.toThrow();
+  });
+});
+
+describe("footage cost", () => {
+  it("prices AI music per started second; no music and library music cost nothing", () => {
+    expect(estimateFootageCost({ music: { kind: "ai", prompt: "x" } }, 7.3)).toBeCloseTo(0.08, 9);
+    expect(estimateFootageCost({ music: { kind: "none" } }, 7.3)).toBe(0);
+    expect(estimateFootageCost({ music: { kind: "library", assetId: "6f1c2b9e-3a4d-4e5f-8a7b-1c2d3e4f5a6b" } }, 7.3)).toBe(0);
+  });
+
+  it("throws UnknownCostModelError for AI music when the table has no price for it", () => {
+    expect(() => estimateFootageCost({ music: { kind: "ai", prompt: "x" } }, 7.3, {})).toThrow(UnknownCostModelError);
+    expect(DEFAULT_COST_TABLE["elevenlabs/scribe_v2"].perSecond).toBeCloseTo(0.4 / 3600, 12);
+  });
+
+  it("estimateReelSeconds is the one billable-seconds rule: whole seconds, rounded up from the exact length", () => {
+    // 211 frames = 7033.3 ms: rounding to 0.1 s first (7.0) then ceil would bill 7 s; the rule bills 8 s.
+    expect(estimateReelSeconds((211 * 1000) / 30)).toBe(8);
+    expect(Math.ceil(Math.round((211 * 1000) / 30 / 100) / 10)).toBe(7);
+    expect(estimateReelSeconds(7000)).toBe(7);
+    expect(estimateReelSeconds((210 * 1000) / 30)).toBe(7); // float noise around a whole second is not a started second
+    expect(estimateReelSeconds(7001)).toBe(8);
+    expect(estimateFootageCost({ music: { kind: "ai", prompt: "x" } }, estimateReelSeconds((211 * 1000) / 30))).toBeCloseTo(0.08, 9);
   });
 });

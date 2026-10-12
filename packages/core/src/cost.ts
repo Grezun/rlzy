@@ -1,4 +1,5 @@
 import { SpendCapError, UnknownCostModelError } from "./errors";
+import type { EditPlan } from "./schema/edit-plan";
 import type { Language, Storyboard } from "./schema/storyboard";
 
 export type CostTable = Record<string, { perImage?: number; perSecond?: number; per1kChars?: number }>;
@@ -11,6 +12,10 @@ export const DEFAULT_COST_TABLE: CostTable = {
   "higgsfield-ai/soul/v2/standard": { perImage: 0.04 },
   "bytedance/seedance-2.5/image-to-video": { perSecond: 0.08 },
   "elevenlabs/eleven_v4": { per1kChars: 0.3 },
+  // Scribe: about $0.40 per hour of audio (spec §4.2).
+  "elevenlabs/scribe_v2": { perSecond: 0.4 / 3600 },
+  // ElevenLabs Music: a planning number. Check it against the team's ElevenLabs plan before the first paid run.
+  "elevenlabs/music": { perSecond: 0.01 },
 };
 
 export const WORDS_PER_SECOND: Record<Language, number> = { he: 2.3, en: 2.6 };
@@ -56,6 +61,20 @@ export function estimateCost(
     lines.push({ item: "voice", model: models.voice, quantity: chars, unit: "chars", usd: (chars / 1000) * price(table, models.voice, "per1kChars") });
   }
   return { totalUsd: lines.reduce((sum, l) => sum + l.usd, 0), lines };
+}
+
+/**
+ * The one rule for billable reel seconds (footage estimate and music generation both use it): whole seconds, rounded up
+ * from the exact length. The length is first rounded to whole ms so float noise (210 frames = 7000.0000001 ms) is not
+ * billed as a started second. Never round to 0.1 s first: 7033 ms is 8 billable seconds, not 7.
+ */
+export function estimateReelSeconds(durationMs: number): number {
+  return Math.ceil(Math.round(durationMs) / 1000);
+}
+
+/** Generation spend of an approved footage plan, in USD. Plan 1's only paid generation is AI music, fitted to the reel. */
+export function estimateFootageCost(plan: Pick<EditPlan, "music">, durationSec: number, table: CostTable = DEFAULT_COST_TABLE): number {
+  return plan.music.kind === "ai" ? Math.ceil(durationSec) * price(table, "elevenlabs/music", "perSecond") : 0;
 }
 
 export function assertWithinCap(estimate: CostEstimate, capUsd: number): void {

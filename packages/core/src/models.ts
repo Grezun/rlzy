@@ -3,6 +3,8 @@ export const DEFAULT_MODELS = {
   image: "higgsfield-ai/soul/v2/standard",
   video: "bytedance/seedance-2.5/image-to-video",
   voiceModelId: "eleven_v4",
+  transcribe: "elevenlabs/scribe_v2",
+  music: "elevenlabs/music",
 } as const;
 
 export function costModelsFor(voiceModelId: string) {
