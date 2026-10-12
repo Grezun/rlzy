@@ -32,7 +32,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
       </div>
       <JobPanel projectId={project.id} initialJob={job} sceneIds={sceneIds} />
       {signed && "error" in signed && <p className="error">{signed.error}</p>}
-      {signed && !("error" in signed) && <ReelPreview timeline={signed.timeline} reelUrl={signed.reelUrl} />}
+      {signed && !("error" in signed) && <ReelPreview timeline={signed.timeline} reelUrl={signed.reelUrl} srtUrl={signed.srtUrl} />}
       {storyboard && parsed?.ok && (
         <StoryboardEditor
           key={`${storyboard.id}:${storyboard.updated_at}`}

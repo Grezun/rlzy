@@ -147,7 +147,7 @@ async function makeCommand(args: string[]): Promise<void> {
   const outDir = join(resolve(dir), "renders", `v${sb.version}`);
   const out = await renderAndExport(sb, gen, deps, outDir, (p) => process.stdout.write(`\r  rendering ${Math.round(p * 100)}%`));
   process.stdout.write("\n");
-  console.log(`\nDone:\n  reel:      ${out.reel}\n  preview:   ${out.preview}\n  thumbnail: ${out.thumbnail}`);
+  console.log(`\nDone:\n  reel:      ${out.reel}\n  preview:   ${out.preview}\n  thumbnail: ${out.thumbnail}\n  subtitles: ${out.srt}`);
 }
 
 export async function main(argv: string[]): Promise<void> {

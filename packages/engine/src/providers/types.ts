@@ -33,6 +33,8 @@ export type PlanRequest = {
   captionPreset: "bold_pop" | "clean";
   palette: string[];
   voice: { voiceId: string; modelId: string };
+  /** Present for style reels: the filled style template, its engine notes and the user's exact script (if any). */
+  style?: { name: string; brief: string; engineNotes: string[]; script?: string };
 };
 
 export interface Planner {

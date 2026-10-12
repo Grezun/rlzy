@@ -4,7 +4,7 @@ import { Reel } from "@reel/video/reel";
 import { Player } from "@remotion/player";
 import { useMemo } from "react";
 
-export function ReelPreview({ timeline, reelUrl }: { timeline: Timeline; reelUrl: string }) {
+export function ReelPreview({ timeline, reelUrl, srtUrl }: { timeline: Timeline; reelUrl: string; srtUrl?: string }) {
   const inputProps = useMemo(() => ({ timeline }), [timeline]);
   return (
     <section className="card stack" style={{ alignItems: "center" }}>
@@ -20,6 +20,7 @@ export function ReelPreview({ timeline, reelUrl }: { timeline: Timeline; reelUrl
         style={{ width: "100%", maxWidth: 360, aspectRatio: "9 / 16", borderRadius: 8 }}
       />
       <a className="button primary" href={reelUrl}>Download MP4 (1080×1920)</a>
+      {srtUrl && <a className="button" href={srtUrl}>Download subtitles (.srt)</a>}
     </section>
   );
 }

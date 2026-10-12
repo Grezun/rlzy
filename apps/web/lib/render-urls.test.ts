@@ -37,6 +37,19 @@ describe("signRender", () => {
     expect(client.calls).toContain("many:assets:a.png,v.wav");
     expect(client.calls).toContain("one:renders:p/v1/reel.mp4:reel.mp4");
   });
+  it("signs the srt with a download name when the render has one", async () => {
+    const client = fakeClient();
+    const signed = await signRender(client, { ...render, srt_path: "p/v1/reel.srt" });
+    expect(signed.srtUrl).toBe("https://signed/renders/p/v1/reel.srt");
+    expect(client.calls).toContain("one:renders:p/v1/reel.srt:reel.srt");
+  });
+  it("leaves srtUrl undefined and signs nothing for old renders without an srt", async () => {
+    const client = fakeClient();
+    const signed = await signRender(client, { ...render, srt_path: null });
+    expect(signed.srtUrl).toBeUndefined();
+    expect(client.calls.some((c) => c.includes(".srt"))).toBe(false);
+    expect((await signRender(fakeClient(), render)).srtUrl).toBeUndefined();
+  });
   it("fails clearly when an asset can't be signed", async () => {
     await expect(signRender(fakeClient(["a.png"]), render)).rejects.toThrow(/a\.png/);
   });

@@ -27,7 +27,7 @@ describe("@reel/db", () => {
   });
 
   it("builds render storage paths per project version", () => {
-    expect(renderPaths("p1", 3)).toEqual({ reel: "p1/v3/reel.mp4", preview: "p1/v3/preview.mp4", thumbnail: "p1/v3/thumbnail.jpg" });
+    expect(renderPaths("p1", 3)).toEqual({ reel: "p1/v3/reel.mp4", preview: "p1/v3/preview.mp4", thumbnail: "p1/v3/thumbnail.jpg", srt: "p1/v3/reel.srt" });
   });
 
   it("validates generate payloads", () => {

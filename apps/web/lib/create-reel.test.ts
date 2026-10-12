@@ -45,4 +45,14 @@ describe("createReelFromForm", () => {
     expect(title).toBe("a".repeat(79) + "😀");
     expect(Array.from(title)).toHaveLength(80);
   });
+  it("passes opts title and styleId to insertProject", async () => {
+    const d = deps();
+    await createReelFromForm(d, form, { title: "My title", styleId: "myth-fact" });
+    expect(d.insertProject).toHaveBeenCalledWith({ title: "My title", language: "en", styleId: "myth-fact" });
+  });
+  it("leaves the insertProject call unchanged without opts", async () => {
+    const d = deps();
+    await createReelFromForm(d, form);
+    expect(d.insertProject).toHaveBeenCalledWith({ title: "a brief", language: "en" });
+  });
 });

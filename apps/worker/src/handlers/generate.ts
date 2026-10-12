@@ -68,6 +68,7 @@ export function createGenerateHandler(deps: GenerateHandlerDeps): JobHandler {
       await deps.blobs.upload(BUCKETS.renders, paths.reel, out.reel, "video/mp4");
       await deps.blobs.upload(BUCKETS.renders, paths.preview, out.preview, "video/mp4");
       await deps.blobs.upload(BUCKETS.renders, paths.thumbnail, out.thumbnail, "image/jpeg");
+      await deps.blobs.upload(BUCKETS.renders, paths.srt, out.srt, "application/x-subrip");
       await deps.db.insertRender({
         projectId: job.project_id,
         storyboardId,

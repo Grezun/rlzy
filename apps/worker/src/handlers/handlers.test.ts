@@ -1,4 +1,5 @@
 import { SpendCapError } from "@reel/core";
+import type { PlanRequest } from "@reel/engine";
 import { costModels, createFakeProviders, FileAssetStore, loadConfig } from "@reel/engine";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -64,6 +65,59 @@ describe("plan handler", () => {
   });
 });
 
+describe("plan handler with a style", () => {
+  const MYTH = { id: "myth-fact", values: { TOPIC: "שינה", MYTH: "8 שעות", FACT: "משתנה", EVIL: "x" }, script: "שלום עולם" };
+  async function recording() {
+    const s = await setup();
+    const calls: PlanRequest[] = [];
+    const planner = { plan: async (r: PlanRequest) => { calls.push(r); return s.providers.planner.plan(r); } };
+    const handler = createPlanHandler({ planner, db: s.db, voices: {}, voiceModelId: "eleven_v4", forceVoiceId: FAKE_VOICE_ID });
+    return { s, calls, handler };
+  }
+
+  it("fills the style template and passes style to the planner", async () => {
+    const { calls, handler } = await recording();
+    await handler(makeJob({ type: "plan", project_id: "p1", payload: { ...FORM, brief: "Myth vs Fact: שינה", style: MYTH } }), ctx().ctx);
+    const st = calls[0].style!;
+    expect(st.name).toBe("Myth vs Fact");
+    expect(st.brief).toMatch(/Misconception: 8 שעות/);
+    expect(st.brief).toMatch(/Exact Hebrew narration: שלום עולם/);
+    expect(st.brief).not.toMatch(/\{\{/);
+    expect(st.engineNotes.length).toBeGreaterThan(0);
+    expect(st.script).toBe("שלום עולם");
+  });
+
+  it("drafts the voiceover when the style payload has no script", async () => {
+    const { calls, handler } = await recording();
+    const { script: _omit, ...noScript } = MYTH;
+    await handler(makeJob({ type: "plan", project_id: "p9", payload: { ...FORM, brief: "Myth vs Fact: שינה", style: noScript } }), ctx().ctx);
+    const st = calls[0].style!;
+    expect(st.brief).toMatch(/Exact Hebrew narration: not provided: draft one/);
+    expect(st.brief).not.toMatch(/\{\{/);
+    expect(st.script).toBeUndefined();
+    expect("script" in st).toBe(false);
+  });
+
+  it.each([["presenter"], ["no-such-style"], ["custom"]])("refuses style %s and marks the project failed", async (id) => {
+    const { s, handler } = await recording();
+    await expect(handler(makeJob({ type: "plan", project_id: "p6", payload: { ...FORM, style: { id, values: { TOPIC: "t", MAIN_MESSAGE: "m" } } } }), ctx().ctx)).rejects.toThrow(/not available/);
+    expect(s.db.projectStatus.get("p6")?.status).toBe("failed");
+  });
+
+  it("refuses a style payload missing a required field", async () => {
+    const { s, handler } = await recording();
+    await expect(handler(makeJob({ type: "plan", project_id: "p7", payload: { ...FORM, style: { id: "myth-fact", values: { TOPIC: "t" } } } }), ctx().ctx)).rejects.toThrow(/Misconception is required/);
+    expect(s.db.projectStatus.get("p7")?.status).toBe("failed");
+  });
+
+  it("passes no style for a payload without one (Custom, old jobs)", async () => {
+    const { calls, handler } = await recording();
+    await handler(makeJob({ type: "plan", project_id: "p8", payload: FORM }), ctx().ctx);
+    expect(calls[0].style).toBeUndefined();
+    expect(calls[0].brief).toBe(FORM.brief);
+  });
+});
+
 describe("generate handler", () => {
   it("renders, uploads the three deliverables, stores an asset-ref timeline and marks the project rendered", async () => {
     const s = await setup();
@@ -71,10 +125,11 @@ describe("generate handler", () => {
     const { reports, ctx: c } = ctx();
     const outcome = await s.generate()(makeJob({ type: "generate", project_id: "p1", payload: { storyboardId: record.id } }), c);
     expect(outcome.status).toBe("done");
-    expect([...s.blobs.objects.keys()].sort()).toEqual(["renders/p1/v1/preview.mp4", "renders/p1/v1/reel.mp4", "renders/p1/v1/thumbnail.jpg"]);
+    expect([...s.blobs.objects.keys()].sort()).toEqual(["renders/p1/v1/preview.mp4", "renders/p1/v1/reel.mp4", "renders/p1/v1/reel.srt", "renders/p1/v1/thumbnail.jpg"]);
     expect(s.db.renders).toHaveLength(1);
     const render = s.db.renders[0];
     expect(render).toMatchObject({ projectId: "p1", storyboardId: record.id, storyboardVersion: 1 });
+    expect(render.paths.srt).toBe("p1/v1/reel.srt");
     expect(render.timeline.audio.voiceUrl).toMatch(/^asset:/);
     expect(render.timeline.clips.filter((c) => c.kind !== "graphic").every((c) => c.src?.startsWith("asset:"))).toBe(true);
     expect(s.db.projectStatus.get("p1")?.status).toBe("rendered");
