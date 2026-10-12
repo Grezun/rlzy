@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { lengthIssues, maxScenesFor, parseStoryboard, normalizeScript, scriptMatches, StoryboardDraftSchema, targetWordsFor, type Storyboard, type StoryboardDraft } from "@reel/core";
+import { lengthIssues, MAX_SCENE_SCRIPT_CHARS, MAX_SCENES, maxScenesFor, parseStoryboard, normalizeScript, scriptMatches, StoryboardDraftSchema, targetWordsFor, type Storyboard, type StoryboardDraft } from "@reel/core";
 import type { PlanRequest, Planner } from "./providers/types";
 
 export type DraftModel = (req: { system: string; user: string }) => Promise<{
@@ -76,7 +76,13 @@ function exactScriptOf(req: PlanRequest): string | undefined {
 }
 
 function exactSceneCap(req: PlanRequest, script: string): number {
-  return Math.max(maxScenesFor(req.targetDurationSec), Math.ceil(normalizeScript(script).length / 350));
+  return Math.min(MAX_SCENES, Math.max(maxScenesFor(req.targetDurationSec), Math.ceil(normalizeScript(script).length / 350)));
+}
+
+/** Build failures that come from how an exact script was split (too many scenes, a scene too long) rather than from other fields. */
+function isSplitFailure(draft: StoryboardDraft): boolean {
+  const n = draft.scenes.length;
+  return n === 0 || n > MAX_SCENES || draft.scenes.some((s) => s.script.trim().length > MAX_SCENE_SCRIPT_CHARS);
 }
 
 export function userPrompt(req: PlanRequest): string {
@@ -142,7 +148,7 @@ function attempt(result: Awaited<ReturnType<DraftModel>>, req: PlanRequest): Att
   try {
     storyboard = buildStoryboard(result.draft, req);
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err), ...(exact ? { mismatch: true } : {}) };
+    return { ok: false, error: err instanceof Error ? err.message : String(err), ...(exact && isSplitFailure(result.draft) ? { mismatch: true } : {}) };
   }
   if (exact) {
     const match = scriptMatches(exact, storyboard.scenes.map((s) => s.script));

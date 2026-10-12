@@ -15,6 +15,8 @@ export const FormatSchema = z.enum(["faceless", "avatar", "character", "footage"
 const FACELESS_KINDS = new Set(["broll_video", "image", "graphic"]);
 const PROMPTED_KINDS = new Set(["broll_video", "image"]);
 // 20 scenes × 400 chars keeps one TTS request well under eleven_v4's 10k-character limit.
+export const MAX_SCENES = 20;
+export const MAX_SCENE_SCRIPT_CHARS = 400;
 
 const OverlaySchema = z.object({
   text: z.string().trim().min(1).max(80),
@@ -24,7 +26,7 @@ const OverlaySchema = z.object({
 
 export const SceneSchema = z.object({
   id: z.string().regex(/^[a-z0-9_-]+$/i, "scene id may only contain letters, digits, _ and -"),
-  script: z.string().trim().min(1).max(400),
+  script: z.string().trim().min(1).max(MAX_SCENE_SCRIPT_CHARS),
   footageSpan: z
     .object({ startMs: z.number().int().nonnegative(), endMs: z.number().int().positive() })
     .optional(),
@@ -64,7 +66,7 @@ export const StoryboardSchema = z
       musicAssetId: z.string().min(1).optional(),
       pacing: z.enum(["calm", "punchy"]),
     }),
-    scenes: z.array(SceneSchema).min(1).max(20),
+    scenes: z.array(SceneSchema).min(1).max(MAX_SCENES),
   })
   .superRefine((sb, ctx) => {
     const seen = new Set<string>();

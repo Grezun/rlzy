@@ -1,4 +1,4 @@
-import type { StoryboardDraft } from "@reel/core";
+import { MAX_SCENES, type StoryboardDraft } from "@reel/core";
 import { describe, expect, it, vi } from "vitest";
 import { buildStoryboard, createPlanner, PlannerRefusedError, ScriptMismatchError, systemPrompt, userPrompt, type DraftModel } from "./planner";
 import type { PlanRequest } from "./providers/types";
@@ -217,5 +217,76 @@ describe("long exact scripts", () => {
     const model = vi.fn<DraftModel>(async () => reply(scenesDraft(chunks(90))));
     await expect(createPlanner(model).plan({ ...STYLE_REQ(long), targetDurationSec: 15 })).rejects.toBeInstanceOf(ScriptMismatchError);
     expect(model).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("Custom prompts are byte-identical to before reel styles (c9bf3ac)", () => {
+  it("pins the system prompt", () => {
+    const before = [
+      "You write storyboards for short vertical social videos (Instagram Reels, TikTok, YouTube Shorts).",
+      "A storyboard is a list of scenes. Each scene has the voiceover line spoken during it, one visual, optional on-screen text overlays, and the transition into the next scene.",
+      "",
+      "What makes a strong reel:",
+      "- Scene 1 is the hook: a bold claim, question, or surprising number within the first 2 seconds. No greetings or channel intros.",
+      "- One idea per scene. Voiceover lines are short, spoken, conversational sentences, not written prose.",
+      "- End with a clear payoff or call to action.",
+      "",
+      "Visuals:",
+      '- kind "image": a still the editor animates with a slow camera move; set motion to zoom_in, zoom_out, pan_left or pan_right.',
+      '- kind "broll_video": a moving shot for action and atmosphere. It costs more, so use it for at most half of the scenes.',
+      '- kind "graphic": a plain branded background for text-heavy moments (lists, numbers); put the key text in an overlay and leave prompt empty.',
+      "- Write every visual prompt in English, even for Hebrew reels, as a concrete photographic description: subject, setting, lighting, camera angle, vertical 9:16 framing. Never ask for text, captions, logos or watermarks inside the image.",
+      "",
+      "Overlays: at most 2 per scene, each under 6 words, in the reel's language. Voiceover captions are added automatically, so overlays must not repeat the voiceover.",
+      'Transitions: mostly "cut"; use "whip" or "zoom" for energy and "fade" for calm moments.',
+    ].join("\n");
+    expect(systemPrompt()).toBe(before);
+    expect(systemPrompt({ style: false })).toBe(before);
+  });
+  it("pins the user prompt", () => {
+    expect(userPrompt(REQ)).toBe(
+      [
+        "Brief: 3 טיפים לצמיחה בטיקטוק",
+        "Language of the voiceover and overlays: Hebrew.",
+        "Target length: 30 seconds, about 69 spoken words in total, about 10 scenes.",
+        "Stay within 12 scenes and about 69 spoken words in total.",
+        "Pacing: punchy.",
+        "Keep each scene's voiceover under 400 characters.",
+      ].join("\n"),
+    );
+  });
+});
+
+describe("exact mode build failures", () => {
+  const script = "מיתוס נפוץ: צריך שמונה שעות שינה. האמת? זה משתנה מאדם לאדם.";
+  it("reports a too-long overlay as a normal planning error, not a script mismatch", async () => {
+    const d = scenesDraft([script]);
+    d.scenes[0].overlays = [{ text: "x".repeat(81), position: "top", animation: "pop" }];
+    const model = vi.fn<DraftModel>(async () => reply(d));
+    const err = await createPlanner(model).plan(STYLE_REQ(script)).catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(ScriptMismatchError);
+    expect(String(err)).toMatch(/invalid storyboard twice/);
+    expect(model).toHaveBeenCalledTimes(2);
+  });
+  it("reports an image scene without a prompt as a normal planning error", async () => {
+    const d = scenesDraft([script]);
+    d.scenes[0].visual = { kind: "image", prompt: "", motion: "zoom_in" };
+    const model = vi.fn<DraftModel>(async () => reply(d));
+    const err = await createPlanner(model).plan(STYLE_REQ(script)).catch((e: unknown) => e);
+    expect(err).not.toBeInstanceOf(ScriptMismatchError);
+    expect(String(err)).toMatch(/needs a visual\.prompt/);
+  });
+  it("reports more scenes than the schema allows as a script mismatch", async () => {
+    const words = Array.from({ length: MAX_SCENES + 1 }, (_, i) => `w${i}`);
+    const model = vi.fn<DraftModel>(async () => reply(scenesDraft(words)));
+    await expect(createPlanner(model).plan(STYLE_REQ(words.join(" ")))).rejects.toBeInstanceOf(ScriptMismatchError);
+  });
+});
+
+describe("exact-mode scene cap", () => {
+  const huge = Array.from({ length: 1600 }, () => "מילה").join(" "); // ~8000 chars, ceil(/350) = 23
+  it("never asks for more scenes than the storyboard schema allows", () => {
+    expect(Math.ceil(huge.length / 350)).toBeGreaterThan(MAX_SCENES);
+    expect(userPrompt({ ...STYLE_REQ(huge), targetDurationSec: 60 })).toMatch(new RegExp(`Use at most ${MAX_SCENES} scenes,`));
   });
 });
