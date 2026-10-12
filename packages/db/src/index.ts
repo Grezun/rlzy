@@ -1,4 +1,4 @@
-import { PlanFormSchema, type PipelineEvent } from "@reel/core";
+import { FOOTAGE_PATH_RE, FootageSettingsSchema, PlanFormSchema, type PipelineEvent } from "@reel/core";
 import * as z from "zod";
 import type { Database } from "./database.types";
 
@@ -8,7 +8,7 @@ export const BUCKETS = { assets: "assets", renders: "renders" } as const;
 
 export type JobType = "plan" | "generate";
 export type JobStatus = "queued" | "running" | "needs_attention" | "done" | "failed";
-export type ProjectStatus = "planning" | "draft" | "generating" | "needs_attention" | "rendered" | "failed";
+export type ProjectStatus = "uploading" | "planning" | "draft" | "generating" | "needs_attention" | "rendered" | "failed";
 
 export type Tables<T extends keyof Database["public"]["Tables"]> = Database["public"]["Tables"][T]["Row"];
 export type JobRow = Tables<"jobs">;
@@ -19,14 +19,17 @@ export type AssetRow = Tables<"assets">;
 
 export const PlanJobPayloadSchema = PlanFormSchema;
 export const GenerateJobPayloadSchema = z.object({ storyboardId: z.uuid() });
+export const IngestFootageJobPayloadSchema = z.object({ storagePath: z.string().regex(FOOTAGE_PATH_RE), settings: FootageSettingsSchema });
+export type IngestFootagePayload = z.infer<typeof IngestFootageJobPayloadSchema>;
 
 const StepStatusSchema = z.enum(["running", "done"]);
 export const JobProgressSchema = z.object({
-  steps: z.partialRecord(z.enum(["voice", "visuals", "render", "export"]), StepStatusSchema).default({}),
+  steps: z.partialRecord(z.enum(["voice", "visuals", "render", "export", "conform", "transcribe", "faces", "plan", "music"]), StepStatusSchema).default({}),
   scenes: z
     .record(z.string(), z.object({ status: z.enum(["running", "done", "failed"]), reason: z.string().optional() }))
     .default({}),
   renderProgress: z.number().min(0).max(1).optional(),
+  notes: z.array(z.string()).optional(),
 });
 export type JobProgress = z.infer<typeof JobProgressSchema>;
 
@@ -46,6 +49,8 @@ export function applyPipelineEvent(progress: JobProgress, event: PipelineEvent):
       };
     case "render-progress":
       return { ...progress, renderProgress: Math.min(1, Math.max(0, event.progress)) };
+    case "note":
+      return { ...progress, notes: [...(progress.notes ?? []), event.message] };
   }
 }
 

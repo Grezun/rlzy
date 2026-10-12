@@ -243,6 +243,36 @@ export type Database = {
           },
         ]
       }
+      team_music: {
+        Row: {
+          created_at: string
+          created_by: string
+          duration_sec: number
+          id: string
+          mood: string
+          storage_path: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string
+          duration_sec: number
+          id?: string
+          mood: string
+          storage_path: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          duration_sec?: number
+          id?: string
+          mood?: string
+          storage_path?: string
+          title?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
