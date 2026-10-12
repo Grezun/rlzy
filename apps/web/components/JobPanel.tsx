@@ -60,6 +60,12 @@ export function JobPanel({ projectId, initialJob, sceneIds }: { projectId: strin
           {view.steps.map((s) => <span key={s.key} className="badge">{ICON[s.state]} {s.label}{s.key === "render" && view.renderPercent !== undefined ? ` ${view.renderPercent}%` : ""}</span>)}
         </div>
       )}
+      {view.notes.length > 0 && (
+        <>
+          <ul className="warn" style={{ margin: 0 }}>{view.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+          <p className="muted" style={{ margin: 0 }}>To retry them, use “Edit as new version” and approve again; finished parts are not charged again.</p>
+        </>
+      )}
       {view.scenes.length > 0 && (
         <ul className="stack" style={{ margin: 0, paddingInlineStart: 18 }}>
           {view.scenes.map((s) => (

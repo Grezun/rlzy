@@ -49,16 +49,19 @@ export function projectStatusLabel(p: { status: string; format: string; created_
 }
 
 /** Browser only: the video's duration from its metadata, or null when the browser can't read it (ingest re-checks). */
-export function readVideoDuration(file: File): Promise<number | null> {
+export const readVideoDuration = (file: File) => readMediaDuration(file, "video");
+
+/** Browser only: the file's duration in seconds from its metadata, or null when the browser can't read it in 10 s. */
+export function readMediaDuration(file: File, tag: "video" | "audio"): Promise<number | null> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
-    const video = document.createElement("video");
+    const media = document.createElement(tag);
     const done = (v: number | null) => { URL.revokeObjectURL(url); resolve(v); };
     const timer = setTimeout(() => done(null), 10_000);
-    video.preload = "metadata";
-    video.onloadedmetadata = () => { clearTimeout(timer); done(Number.isFinite(video.duration) ? video.duration : null); };
-    video.onerror = () => { clearTimeout(timer); done(null); };
-    video.src = url;
+    media.preload = "metadata";
+    media.onloadedmetadata = () => { clearTimeout(timer); done(Number.isFinite(media.duration) ? media.duration : null); };
+    media.onerror = () => { clearTimeout(timer); done(null); };
+    media.src = url;
   });
 }
 

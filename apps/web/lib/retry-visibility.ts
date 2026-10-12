@@ -4,7 +4,7 @@ export function canRetryGenerate(
 ): boolean {
   if (storyboard.status !== "approved") return false;
   if (job && (job.status === "queued" || job.status === "running")) return false;
-  if (job?.type === "generate" && job.status === "done") {
+  if ((job?.type === "generate" || job?.type === "generate_footage") && job.status === "done") {
     const p = job.payload;
     const forThis = typeof p === "object" && p !== null && "storyboardId" in p && (p as { storyboardId: unknown }).storyboardId === storyboard.id;
     if (forThis) return false;
