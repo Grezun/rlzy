@@ -1,5 +1,5 @@
 import { FPS } from "../assemble";
-import { estimateFootageCost, estimateReelSeconds } from "../cost";
+import { ceilToCent, DEFAULT_COST_TABLE, estimateFootageCost, estimateReelSeconds, type CostTable } from "../cost";
 import type { EditPlan } from "../schema/edit-plan";
 import type { FaceTrack, Transcript } from "../schema/footage";
 import { TimelineSchema, type SfxName, type Timeline, type TimelineClip, type Word } from "../schema/timeline";
@@ -30,12 +30,13 @@ export function footageDurationMs(plan: Pick<EditPlan, "beats" | "hook" | "endin
 
 /**
  * Fills plan.estimate (spec §5.10): reel length shown to 0.1 s, and generation cost in USD billed on
- * estimateReelSeconds (the same rule music generation uses). Never trusted from a client.
+ * estimateReelSeconds (the same rule music generation uses), rounded up to the cent. Never trusted from a client.
  */
-export function withFootageEstimate(plan: EditPlan, words: Word[], style: EditStyle): EditPlan {
+export function withFootageEstimate(plan: EditPlan, words: Word[], style: EditStyle, table: CostTable = DEFAULT_COST_TABLE): EditPlan {
   const durationMs = footageDurationMs(plan, words, style);
   const durationSec = Math.round(durationMs / 100) / 10;
-  const credits = Math.round(estimateFootageCost(plan, estimateReelSeconds(durationMs)) * 100) / 100;
+  // Rounded UP to the cent: generation skips music that costs more than the approved estimate.
+  const credits = ceilToCent(estimateFootageCost(plan, estimateReelSeconds(durationMs), table));
   return { ...plan, estimate: { durationSec, credits } };
 }
 

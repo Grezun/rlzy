@@ -11,7 +11,7 @@ describe("checkFootageFile", () => {
     expect(checkFootageFile({ ...ok, name: "talk.avi" })).toEqual(["Upload an MP4 or MOV video."]);
     expect(checkFootageFile({ ...ok, size: 0 })).toEqual(["This file is empty."]);
     expect(checkFootageFile({ ...ok, size: 2 * 1024 ** 3 + 1 })).toEqual(["This video is over 2 GB. Trim or compress it first."]);
-    expect(checkFootageFile({ ...ok, durationSec: 192.4 })).toEqual(["This video is 3:12 long. Trim it to 3:00 or less."]);
+    expect(checkFootageFile({ ...ok, durationSec: 192.4 })).toEqual(["This video is 3:13 long. Trim it to 3:00 or less."]);
   });
   it("allows exactly 3:00 and 2 GB, and skips the length check when the browser can't read it", () => {
     expect(checkFootageFile({ ...ok, size: 2 * 1024 ** 3, durationSec: 180 })).toEqual([]);
@@ -34,8 +34,13 @@ describe("footage paths and settings", () => {
     expect(() => FootageSettingsSchema.parse({ language: "he", targetDurationSec: 20 })).toThrow();
     expect(() => FootageSettingsSchema.parse({ language: "he", targetDurationSec: 30, ctaKeyword: "x".repeat(31) })).toThrow();
   });
-  it("formats minutes and seconds", () => {
-    expect(formatMinSec(59.9)).toBe("0:59");
+  it("formats minutes and seconds, rounding up to the whole second", () => {
+    expect(formatMinSec(59.9)).toBe("1:00");
     expect(formatMinSec(181)).toBe("3:01");
+    expect(formatMinSec(180)).toBe("3:00");
+    expect(formatMinSec(95)).toBe("1:35");
+  });
+  it("never shows a too-long clip as 3:00 (180.4 s reads 3:01)", () => {
+    expect(checkFootageFile({ name: "a.mp4", size: 10, durationSec: 180.4 })).toEqual(["This video is 3:01 long. Trim it to 3:00 or less."]);
   });
 });

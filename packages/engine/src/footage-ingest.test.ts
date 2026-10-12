@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FileAssetStore } from "./asset-store";
-import { noFaceTracker, visionFaceTracker } from "./face-tracker";
+import { createFaceTracker, noFaceTracker, visionFaceTracker } from "./face-tracker";
 import { footageHashes, ingestFootage, loadFootageInputs } from "./footage-ingest";
 import { createFakeProviders } from "./providers/fake";
 
@@ -109,6 +109,30 @@ describe("ingestFootage (real ffmpeg, fake Scribe, no face helper)", () => {
     expect((await probe(seen[0])).video).toMatchObject({ width: 1080, height: 1920 });
     expect(seen[0]).not.toBe(join(dir, "v.mp4"));
     expect(working.hash).toBe(source.assetId);
+  }, 300_000);
+
+  it("takes the source length from the video stream, not the longer audio, so no shot asks for frames past the last one", async () => {
+    const { dir, deps } = await setup();
+    await runFfmpeg([
+      "-f", "lavfi", "-i", "color=c=gray:s=360x640:d=2:r=30",
+      "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=4",
+      "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", join(dir, "long-audio.mp4"),
+    ]);
+    const { source } = await ingestFootage(join(dir, "long-audio.mp4"), deps);
+    const working = (await loadFootageInputs(deps.store, source)).working.path;
+    const info = await probe(working);
+    expect(info.durationSec).toBeGreaterThan(3.9);
+    expect(source.durationMs).toBe(Math.round(info.video!.durationSec * 1000));
+    expect(source.durationMs).toBeLessThanOrEqual(2050);
+  }, 300_000);
+
+  it("finds the face before transcribing, so a real worker without the face helper fails before any paid call", async () => {
+    const { dir, deps } = await setup();
+    await makeTestVideo(join(dir, "v.mp4"), { durationSec: 2, width: 360, height: 640, withAudio: true });
+    let calls = 0;
+    const paid = { model: "elevenlabs/scribe_v2", transcribe: async () => { calls++; throw new Error("must not be called"); } };
+    await expect(ingestFootage(join(dir, "v.mp4"), { ...deps, transcriber: paid, faceTracker: createFaceTracker("real", false) })).rejects.toThrow(/face-helper is not built/);
+    expect(calls).toBe(0);
   }, 300_000);
 
   it("keys transcripts and faces by model, so fake data never answers for a real provider", () => {

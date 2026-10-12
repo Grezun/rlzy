@@ -26,7 +26,11 @@ export function footageExt(fileName: string): FootageExt | null {
 
 export const footageStoragePath = (projectId: string, ext: FootageExt) => `footage/${projectId}/source.${ext}`;
 
-export const formatMinSec = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+/** m:ss, rounded UP to the whole second: a clip just over a limit never reads as the limit (180.4 s → "3:01"). */
+export function formatMinSec(sec: number): string {
+  const whole = Math.ceil(sec);
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, "0")}`;
+}
 
 /** Browser checks before upload. durationSec is null when the browser can't read it; ingest checks again. */
 export function checkFootageFile(file: { name: string; size: number; durationSec: number | null }): string[] {

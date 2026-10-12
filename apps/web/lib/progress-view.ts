@@ -18,7 +18,7 @@ type JobLike = { type: string; status: string; progress: unknown; error: string 
 type StepKey = keyof ReturnType<typeof emptyProgress>["steps"];
 const STEPS: Record<string, [StepKey, string][]> = {
   generate: [["voice", "Voice"], ["visuals", "Visuals"], ["render", "Render"], ["export", "Export"]],
-  ingest_footage: [["conform", "Prepare video"], ["transcribe", "Transcribe"], ["faces", "Find face"], ["plan", "Plan the edit"]],
+  ingest_footage: [["conform", "Prepare video"], ["faces", "Find face"], ["transcribe", "Transcribe"], ["plan", "Plan the edit"]],
   generate_footage: [["voice", "Cut audio"], ["music", "Music"], ["render", "Render"], ["export", "Export"]],
 };
 

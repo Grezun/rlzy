@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertWithinCap, DEFAULT_COST_TABLE, estimateCost, estimateFootageCost, estimateReelSeconds, estimateSceneSeconds, MUSIC_MIN_MS, musicBillSeconds, videoBillSeconds } from "./cost";
+import { assertWithinCap, ceilToCent, DEFAULT_COST_TABLE, estimateCost, estimateFootageCost, estimateReelSeconds, estimateSceneSeconds, MUSIC_MIN_MS, musicBillSeconds, videoBillSeconds } from "./cost";
 import { SpendCapError, UnknownCostModelError } from "./errors";
 import { parseStoryboard } from "./schema/storyboard";
 import { validStoryboard } from "./testing/fixtures";
@@ -68,6 +68,15 @@ describe("footage cost", () => {
     expect(estimateReelSeconds((210 * 1000) / 30)).toBe(7); // float noise around a whole second is not a started second
     expect(estimateReelSeconds(7001)).toBe(8);
     expect(estimateFootageCost({ music: { kind: "ai", prompt: "x" } }, estimateReelSeconds((211 * 1000) / 30))).toBeCloseTo(0.08, 9);
+  });
+
+  it("ceilToCent rounds a USD amount up to the cent, ignoring float noise on an exact cent", () => {
+    expect(ceilToCent(0.0712)).toBe(0.08);
+    expect(ceilToCent(0.0701)).toBe(0.08);
+    expect(ceilToCent(0.08)).toBe(0.08);
+    expect(ceilToCent(0.07 * 100 / 100 + 1e-15)).toBe(0.07);
+    expect(ceilToCent(0.1 + 0.2)).toBe(0.3);
+    expect(ceilToCent(0)).toBe(0);
   });
 
   it("bills AI music for at least the provider's 3 s minimum, so a short reel's estimate covers what is billed", () => {

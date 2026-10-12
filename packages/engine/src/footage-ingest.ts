@@ -38,7 +38,7 @@ async function readJson<T>(asset: StoredAsset, schema: z.ZodType<T>): Promise<T>
   return schema.parse(JSON.parse(await readFile(asset.path, "utf8")));
 }
 
-/** Spec §4.2: probe, working copy, transcript, face track. Every step is a cached asset, so a retry skips finished work. */
+/** Spec §4.2: probe, working copy, face track, transcript. Every step is a cached asset, so a retry skips finished work. */
 export async function ingestFootage(originalPath: string, deps: IngestDeps): Promise<{ source: FootageSource; transcript: Transcript }> {
   const { store, log } = deps;
   const emit = (e: PipelineEvent) => deps.onEvent?.(e);
@@ -53,8 +53,21 @@ export async function ingestFootage(originalPath: string, deps: IngestDeps): Pro
   if (!info.audio) throw new FootageInputError("This video has no sound. Upload a video where you speak.");
   if (info.durationSec > FOOTAGE_MAX_SEC_INGEST) throw new FootageInputError(`This video is ${formatMinSec(info.durationSec)} long. Trim it to 3:00 or less and upload it again.`);
   const working = await workingCopy(store, originalPath, await sha256File(originalPath), deps.tmpDir, log);
-  const durationMs = Math.round((await probe(working.path)).durationSec * 1000);
+  // The video stream's length, never the container's (audio can run longer): shots must not ask for frames past the last one.
+  const workingInfo = await probe(working.path);
+  const durationMs = Math.round((workingInfo.video?.durationSec ?? workingInfo.durationSec) * 1000);
   emit({ type: "step", step: "conform", status: "done" });
+
+  // Faces first: it is free, so a worker without the face helper fails before the paid transcription.
+  emit({ type: "step", step: "faces", status: "running" });
+  const faces = await cached(store, footageHashes.faces(deps.faceTracker.model, working.hash), async () => {
+    log("ingest: finding the face");
+    const file = tmp("faces.json");
+    // The working copy, never the original: rotation is already applied there and the helper ignores rotation metadata.
+    await writeFile(file, JSON.stringify(FaceTrackSchema.parse(await deps.faceTracker.track(working.path))));
+    return { path: file, ext: DATA_EXT, meta: { kind: "data", provider: "face-helper", model: deps.faceTracker.model } };
+  });
+  emit({ type: "step", step: "faces", status: "done" });
 
   emit({ type: "step", step: "transcribe", status: "running" });
   const model = deps.transcriber.model;
@@ -71,16 +84,6 @@ export async function ingestFootage(originalPath: string, deps: IngestDeps): Pro
   const transcript = await readJson(transcriptAsset, TranscriptSchema);
   if (transcript.words.length < 5) throw new FootageInputError("No speech found. This editor needs a video of you talking.");
   emit({ type: "step", step: "transcribe", status: "done" });
-
-  emit({ type: "step", step: "faces", status: "running" });
-  const faces = await cached(store, footageHashes.faces(deps.faceTracker.model, working.hash), async () => {
-    log("ingest: finding the face");
-    const file = tmp("faces.json");
-    // The working copy, never the original: rotation is already applied there and the helper ignores rotation metadata.
-    await writeFile(file, JSON.stringify(FaceTrackSchema.parse(await deps.faceTracker.track(working.path))));
-    return { path: file, ext: DATA_EXT, meta: { kind: "data", provider: "face-helper", model: deps.faceTracker.model } };
-  });
-  emit({ type: "step", step: "faces", status: "done" });
   return { source: { assetId: working.hash, durationMs, transcriptAssetId: transcriptAsset.hash, faceTrackAssetId: faces.hash }, transcript };
 }
 

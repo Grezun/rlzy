@@ -131,7 +131,10 @@ export function buildEditPlan(draft: EditPlanDraft, req: FootagePlanRequest, bea
       patternBreak: draft.hook.patternBreak,
       reason: draft.hook.reason.trim().slice(0, 300),
     },
-    ending: draft.ending.kind === "cta" ? { kind: "cta", keyword: req.settings.ctaKeyword ?? draft.ending.keyword.trim() } : { kind: draft.ending.kind },
+    // The user's keyword is owned by code: when set, the reel always ends on that CTA.
+    ending: req.settings.ctaKeyword
+      ? { kind: "cta", keyword: req.settings.ctaKeyword }
+      : draft.ending.kind === "cta" ? { kind: "cta", keyword: draft.ending.keyword.trim() } : { kind: draft.ending.kind },
     background: { mode: "original" },
     music: m.kind === "library" ? { kind: "library", assetId: m.trackId } : m.kind === "ai" ? { kind: "ai", prompt: m.prompt.trim() } : { kind: "none" },
     sfx: draft.sfx,

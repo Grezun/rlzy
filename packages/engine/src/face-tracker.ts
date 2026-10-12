@@ -16,8 +16,8 @@ export const visionFaceTracker = (): FaceTracker => ({
 /** Fake worker without the Swift binary: no faces, so every crop is centred. */
 export const noFaceTracker: FaceTracker = { model: "fake/no-face", track: async () => ({ intervalMs: 100, samples: [] }) };
 
-export function createFaceTracker(mode: "real" | "fake"): FaceTracker {
-  if (faceHelperAvailable()) return visionFaceTracker();
+export function createFaceTracker(mode: "real" | "fake", helperAvailable = faceHelperAvailable()): FaceTracker {
+  if (helperAvailable) return visionFaceTracker();
   if (mode === "fake") return noFaceTracker;
   return {
     model: VISION,

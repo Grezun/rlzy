@@ -43,6 +43,14 @@ describe("buildEditPlan", () => {
     d.beats[0].emphasisWordIdx = 6.5;
     expect(() => buildEditPlan(d, REQ, splitBeats(REQ.transcript.words), style)).toThrow(/beats\.0\.emphasisWordIdx/);
   });
+  it("forces a CTA ending with the user's keyword whatever ending the model chose", () => {
+    const beats = splitBeats(REQ.transcript.words);
+    for (const kind of ["loop", "none", "cta"] as const) {
+      expect(buildEditPlan(draft({ ending: { kind, keyword: "OTHER" } }), REQ, beats, style).ending).toEqual({ kind: "cta", keyword: "AI" });
+    }
+    const noKeyword = { ...REQ, settings: { language: "he" as const, targetDurationSec: 15 as const } };
+    expect(buildEditPlan(draft({ ending: { kind: "loop", keyword: "" } }), noKeyword, beats, style).ending).toEqual({ kind: "loop" });
+  });
   it("reports missing and unknown beat ids", () => {
     const d = draft();
     d.beats = [d.beats[0], { ...d.beats[1], id: "b7" }];

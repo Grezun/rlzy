@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateFootageCost, estimateReelSeconds } from "../cost";
+import { ceilToCent, estimateFootageCost, estimateReelSeconds } from "../cost";
 import { TimelineSchema } from "../schema/timeline";
 import { parseEditPlan, type EditPlan } from "../schema/edit-plan";
 import { faceTrackFixture, footageTranscript, testEditStyle, validEditPlan } from "../testing/fixtures";
@@ -128,6 +128,17 @@ describe("estimate", () => {
   it("bills music on the shared estimateReelSeconds rule, so generation's check against the estimate agrees", () => {
     const ai = plan({ music: { kind: "ai", prompt: "calm lo-fi" } });
     const ms = footageDurationMs(ai, transcript.words, style);
-    expect(withFootageEstimate(ai, transcript.words, style).estimate.credits).toBeCloseTo(estimateFootageCost(ai, estimateReelSeconds(ms)), 9);
+    const cost = estimateFootageCost(ai, estimateReelSeconds(ms));
+    const credits = withFootageEstimate(ai, transcript.words, style).estimate.credits;
+    // Rounded up to the cent, so generation's "cost > estimate" check never skips approved music.
+    expect(credits).toBe(ceilToCent(cost));
+    expect(credits).toBeGreaterThanOrEqual(cost);
+    expect(credits - cost).toBeLessThan(0.01);
+  });
+
+  it("rounds a sub-cent music price up, never down", () => {
+    const ai = plan({ music: { kind: "ai", prompt: "calm lo-fi" } });
+    // 8 billed seconds × $0.0101 = $0.0808: rounding to nearest would give 0.08 and skip the approved music.
+    expect(withFootageEstimate(ai, transcript.words, style, { "elevenlabs/music": { perSecond: 0.0101 } }).estimate.credits).toBe(0.09);
   });
 });

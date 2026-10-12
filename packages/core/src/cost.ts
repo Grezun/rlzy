@@ -82,6 +82,11 @@ export function musicBillSeconds(reelSeconds: number): number {
 }
 
 /** Generation spend of an approved footage plan, in USD. Plan 1's only paid generation is AI music, fitted to the reel. */
+/** Rounds USD up to the cent (float noise on an exact cent, e.g. 0.1 + 0.2, stays on that cent). */
+export function ceilToCent(usd: number): number {
+  return Math.ceil(Math.round(usd * 1e6) / 1e4) / 100;
+}
+
 export function estimateFootageCost(plan: Pick<EditPlan, "music">, durationSec: number, table: CostTable = DEFAULT_COST_TABLE): number {
   return plan.music.kind === "ai" ? musicBillSeconds(durationSec) * price(table, "elevenlabs/music", "perSecond") : 0;
 }
