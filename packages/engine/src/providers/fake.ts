@@ -1,5 +1,5 @@
 import { PermanentProviderError } from "@reel/core";
-import { makeTestImage, makeTestTone, makeTestVideo } from "@reel/media";
+import { makeTestImage, makeTestTone, makeTestVideo, probe } from "@reel/media";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,6 +9,9 @@ import type { Planner, PlanRequest, Providers } from "./types";
 const COLORS = ["0x2E86AB", "0xE4572E", "0x76B041", "0xFFC914", "0x7D5BA6"];
 const WORD_MS = 350;
 
+/** What the fake transcriber "hears" in any upload: three sentences, a filler and a comment keyword. */
+export const FAKE_TALK = "היי חברים, אממ היום אני אראה לכם טריק. זה חוסך שעות עבודה. תכתבו AI בתגובות.";
+
 const FAKE_SCRIPTS = {
   he: ["3 טיפים ל-TikTok שכדאי להכיר", "טיפ ראשון: תפתחו עם הוק חזק", "שמרו ועקבו לעוד טיפים"],
   en: ["3 TikTok tips you should know", "Tip one: open with a strong hook", "Save this and follow for more"],
@@ -16,7 +19,7 @@ const FAKE_SCRIPTS = {
 
 /** Deterministic, free providers backed by lavfi fixtures, for tests and `--fake` runs. */
 export function createFakeProviders(opts: { workDir: string; failPromptsContaining?: string }) {
-  const calls = { image: 0, video: 0, upload: 0, voice: 0, plan: 0 };
+  const calls = { image: 0, video: 0, upload: 0, voice: 0, plan: 0, transcribe: 0, music: 0 };
   let n = 0;
   const nextFile = (ext: string) => join(opts.workDir, `fake-${++n}.${ext}`);
 
@@ -58,6 +61,26 @@ export function createFakeProviders(opts: { workDir: string; failPromptsContaini
         const out = nextFile("wav");
         await makeTestTone(out, { durationSec: (tokens.length * WORD_MS) / 1000, volumeDb: -20 });
         return { audio: await readFile(out), ext: "wav", words, timingSource: "alignment" };
+      },
+    },
+    transcriber: {
+      model: "fake/scribe",
+      async transcribe(audioPath: string) {
+        calls.transcribe++;
+        const durationMs = Math.round((await probe(audioPath)).durationSec * 1000);
+        const tokens = FAKE_TALK.split(" ");
+        const slot = durationMs / (tokens.length + 1);
+        const words = tokens.map((text, i) => ({ text, startMs: Math.round((i + 0.5) * slot), endMs: Math.round((i + 0.5) * slot + slot * 0.85), logprob: -0.05 }));
+        return { transcript: { languageCode: "heb", languageProbability: 0.99, words, events: [] } };
+      },
+    },
+    music: {
+      model: "fake/music",
+      async compose({ durationMs }: { prompt: string; durationMs: number }) {
+        calls.music++;
+        const out = nextFile("wav");
+        await makeTestTone(out, { durationSec: Math.max(1, durationMs / 1000), volumeDb: -24 });
+        return { audio: await readFile(out), ext: "wav" as const };
       },
     },
     planner: {

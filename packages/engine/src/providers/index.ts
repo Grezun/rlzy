@@ -2,7 +2,7 @@ import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireRealCredentials, type EngineConfig } from "../config";
 import { claudeDraftModel, createPlanner } from "../planner";
-import { ElevenLabsVoice, sdkElevenLabs } from "./elevenlabs";
+import { ElevenLabsMusic, ElevenLabsVoice, ScribeTranscriber, sdkElevenLabs, sdkElevenLabsFootage } from "./elevenlabs";
 import { FilePendingStore } from "../pending-store";
 import { createFakeProviders } from "./fake";
 import { httpHiggsfieldApi } from "./higgsfield-api";
@@ -16,11 +16,14 @@ export function createProviders(config: EngineConfig, workDir: string, opts?: { 
   const api = httpHiggsfieldApi(credentials, config.higgsfield.baseUrl);
   const pending = new FilePendingStore(path.join(config.cacheDir, "pending"));
   const gateway = new HiggsfieldGateway(api, pending, config.higgsfield.concurrency, { log: opts?.log ?? ((m) => console.log(m)) });
+  const footageApi = sdkElevenLabsFootage(config.elevenlabs.apiKey!);
   return {
     image: new HiggsfieldImageGen(gateway, config.higgsfield.imageModel),
     video: new HiggsfieldVideoGen(gateway, config.higgsfield.videoModel, config.higgsfield.videoResolution, config.higgsfield.maxWaitMinutes * 60_000),
     uploader: new HiggsfieldUploader(credentials, config.higgsfield.baseUrl),
     voice: new ElevenLabsVoice(sdkElevenLabs(config.elevenlabs.apiKey!)),
+    transcriber: new ScribeTranscriber(footageApi),
+    music: new ElevenLabsMusic(footageApi),
   };
 }
 

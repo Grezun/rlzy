@@ -10,6 +10,7 @@ const CONTENT_TYPES: Record<string, string> = {
   mp4: "video/mp4",
   wav: "audio/wav",
   mp3: "audio/mpeg",
+  json: "application/json",
 };
 
 export function contentTypeFor(fileName: string): string {
