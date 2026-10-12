@@ -11,6 +11,7 @@
     "reel": "tsx packages/engine/src/cli.ts",
     "studio": "npm run studio -w @reel/video",
     "smoke:higgsfield": "tsx packages/engine/scripts/smoke-higgsfield.ts",
+    "sfx:generate": "tsx packages/engine/scripts/generate-sfx.ts",
     "smoke:elevenlabs": "tsx packages/engine/scripts/smoke-elevenlabs.ts",
     "worker": "tsx apps/worker/src/main.ts",
     "worker:fake": "tsx apps/worker/src/main.ts --fake",
