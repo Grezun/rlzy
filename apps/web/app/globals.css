@@ -28,6 +28,7 @@ button, .button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 
 button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 .error { color: var(--error); }
+progress { width: 100%; height: 10px; }
 .warn { color: var(--warn); }
 .muted { color: var(--muted); }
 .badge { font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); }

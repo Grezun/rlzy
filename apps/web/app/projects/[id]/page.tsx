@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { JobPanel } from "@/components/JobPanel";
 import { ReelPreview } from "@/components/ReelPreview";
 import { StoryboardEditor } from "@/components/StoryboardEditor";
+import { uploadIncomplete } from "@/lib/footage-upload";
 import { canRetryGenerate } from "@/lib/retry-visibility";
 import { getProjectView } from "@/lib/queries";
 import { signRender, supabaseSigningClient } from "@/lib/render-urls";
@@ -16,6 +18,16 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
   const view = await getProjectView(supabase, id);
   if (!view) notFound();
   const { project, storyboard, job } = view;
+  if (project.format === "footage" && project.status === "uploading") {
+    return (
+      <main className="stack">
+        <h1 dir="auto" style={{ margin: 0 }}>{project.title}</h1>
+        {uploadIncomplete(project.created_at, new Date())
+          ? <p className="error">Upload incomplete: <Link href="/new/footage">upload again</Link>.</p>
+          : <p className="muted">Uploading… keep the upload tab open.</p>}
+      </main>
+    );
+  }
   const parsed = storyboard ? checkStoryboard(storyboard.json) : null;
   const canRetry = storyboard ? canRetryGenerate(storyboard, job) : false;
   const sceneIds = parsed?.ok ? parsed.storyboard.scenes.filter((s) => s.visual.kind !== "graphic").map((s) => s.id) : [];
