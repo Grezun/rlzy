@@ -72,9 +72,18 @@ export function estimateReelSeconds(durationMs: number): number {
   return Math.ceil(Math.round(durationMs) / 1000);
 }
 
+/** ElevenLabs Music's length limits. The provider clamps to them, so billing (and the estimate) starts at the minimum. */
+export const MUSIC_MIN_MS = 3000;
+export const MUSIC_MAX_MS = 600_000;
+
+/** Billed seconds of AI music for a reel of `reelSeconds` (from estimateReelSeconds): never below the provider minimum. */
+export function musicBillSeconds(reelSeconds: number): number {
+  return Math.max(Math.ceil(reelSeconds), MUSIC_MIN_MS / 1000);
+}
+
 /** Generation spend of an approved footage plan, in USD. Plan 1's only paid generation is AI music, fitted to the reel. */
 export function estimateFootageCost(plan: Pick<EditPlan, "music">, durationSec: number, table: CostTable = DEFAULT_COST_TABLE): number {
-  return plan.music.kind === "ai" ? Math.ceil(durationSec) * price(table, "elevenlabs/music", "perSecond") : 0;
+  return plan.music.kind === "ai" ? musicBillSeconds(durationSec) * price(table, "elevenlabs/music", "perSecond") : 0;
 }
 
 export function assertWithinCap(estimate: CostEstimate, capUsd: number): void {

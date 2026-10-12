@@ -1,4 +1,4 @@
-import { compileFootage, estimateFootageCost, estimateReelSeconds, SFX_NAMES, type EditPlan, type EditStyle, type PipelineEvent, type SfxName, type Timeline } from "@reel/core";
+import { compileFootage, estimateFootageCost, estimateReelSeconds, musicBillSeconds, SFX_NAMES, type EditPlan, type EditStyle, type PipelineEvent, type SfxName, type Timeline } from "@reel/core";
 import { concatAudioSegments, fitMusic, makeSfxPlaceholders, normalizeLoudness, sha256File, SOCIAL_LOUDNESS } from "@reel/media";
 import { missingSfx, SFX_DIR, sfxFileIn } from "@reel/video/sfx";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -73,22 +73,20 @@ export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps
     if (estimateFootageCost(plan, billSec) > plan.estimate.credits + 1e-9) {
       notes.push("AI music was skipped: it would cost more than the approved estimate. Use Edit as new version and approve again to update it.");
     } else {
-      let lastError: unknown;
-      for (let attempt = 1; attempt <= 2 && !music; attempt++) {
-        try {
-          const raw = await cached(store, footageHashes.musicAi(deps.music.model, prompt, Math.round(draft.durationMs)), async () => {
-            log(`music: composing (attempt ${attempt})`);
-            const res = await deps.music.compose({ prompt, durationMs: draft.durationMs });
-            const file = tmp(`music-ai.${res.ext}`);
-            await writeFile(file, res.audio);
-            return { path: file, ext: res.ext, meta: { kind: "audio", provider: deps.music.model.split("/")[0], model: deps.music.model, estUsd: estUsd(deps.music.model, "perSecond", billSec) } };
-          });
-          music = await fitted(raw.path, raw.hash);
-        } catch (err) {
-          lastError = err;
-        }
+      // Exactly one paid generation per job: the approved estimate covers one track, and a failure after the provider
+      // accepted the request (e.g. mid-download) may already be billed. A failure skips music; the reel still renders.
+      try {
+        const raw = await cached(store, footageHashes.musicAi(deps.music.model, prompt, Math.round(draft.durationMs)), async () => {
+          log("music: composing");
+          const res = await deps.music.compose({ prompt, durationMs: draft.durationMs });
+          const file = tmp(`music-ai.${res.ext}`);
+          await writeFile(file, res.audio);
+          return { path: file, ext: res.ext, meta: { kind: "audio", provider: deps.music.model.split("/")[0], model: deps.music.model, estUsd: estUsd(deps.music.model, "perSecond", musicBillSeconds(billSec)) } };
+        });
+        music = await fitted(raw.path, raw.hash);
+      } catch (err) {
+        notes.push(`AI music failed (${message(err)}), so the reel has no music.`);
       }
-      if (!music) notes.push(`AI music failed twice (${message(lastError)}), so the reel has no music.`);
     }
   }
   emit({ type: "step", step: "music", status: "done" });

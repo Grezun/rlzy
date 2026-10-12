@@ -49,14 +49,19 @@ describe("generateFootageAssets + renderFootage (fake music, placeholder sfx, re
     expect(providers.calls.music).toBe(0);
   }, 300_000);
 
-  it("skips music that fails twice, with a note", async () => {
-    const { plan, deps } = await prepared({ kind: "ai", prompt: "calm lo-fi" });
+  it("makes exactly one paid music call: a failure skips music with a note (never a second, possibly billed, attempt) and the reel renders", async () => {
+    const { dir, plan: p, deps } = await prepared({ kind: "ai", prompt: "calm lo-fi" });
+    const plan = parseEditPlan({ ...p, estimate: { ...p.estimate, credits: 1 } });
     let calls = 0;
     const broken = { model: "fake/broken", compose: async () => { calls++; throw new Error("service down"); } };
-    const gen = await generateFootageAssets(parseEditPlan({ ...plan, estimate: { ...plan.estimate, credits: 1 } }), { ...deps, music: broken });
-    expect(calls).toBe(2);
-    expect(gen.notes).toEqual(["AI music failed twice (service down), so the reel has no music."]);
-  }, 300_000);
+    const gen = await generateFootageAssets(plan, { ...deps, music: broken });
+    expect(calls).toBe(1);
+    expect(gen.music).toBeUndefined();
+    expect(gen.notes).toEqual(["AI music failed (service down), so the reel has no music."]);
+    const out = await renderFootage(plan, gen, deps, join(dir, "out"));
+    expect((await probe(out.reel)).video).toMatchObject({ width: 1080, height: 1920 });
+    expect(out.timeline.audio.musicUrl).toBeUndefined();
+  }, 900_000);
 
   it("loops a short library track; a removed track and a missing sfx pack become notes", async () => {
     const { dir, plan, deps } = await prepared({ kind: "library", assetId: "3f2c8f9e-5c1d-4a43-9d4e-2f1c3b4a5d6e" });

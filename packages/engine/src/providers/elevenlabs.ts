@@ -1,5 +1,5 @@
 import { ElevenLabsClient, ElevenLabsError } from "@elevenlabs/elevenlabs-js";
-import { alignmentToWords, PermanentProviderError, TranscriptSchema, type CharacterAlignment, type Transcript, type Word } from "@reel/core";
+import { alignmentToWords, MUSIC_MAX_MS, MUSIC_MIN_MS, PermanentProviderError, TranscriptSchema, type CharacterAlignment, type Transcript, type Word } from "@reel/core";
 import { readFile } from "node:fs/promises";
 import { contentTypeFor } from "../download";
 import { withRetry } from "../retry";
@@ -137,7 +137,7 @@ export class ElevenLabsMusic implements MusicGen {
   readonly model = "elevenlabs/music";
   constructor(private readonly api: ElevenLabsFootageApi, private readonly opts: RetryOpts = {}) {}
   async compose({ prompt, durationMs }: { prompt: string; durationMs: number }) {
-    const lengthMs = Math.min(600_000, Math.max(3000, Math.round(durationMs)));
+    const lengthMs = Math.min(MUSIC_MAX_MS, Math.max(MUSIC_MIN_MS, Math.round(durationMs)));
     const audio = await withRetry(() => this.api.music(prompt, lengthMs), retryWith(this.opts));
     if (audio.length === 0) throw new PermanentProviderError("ElevenLabs returned empty music", "elevenlabs");
     return { audio, ext: "mp3" as const };
