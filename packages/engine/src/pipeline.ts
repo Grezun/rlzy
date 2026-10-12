@@ -16,7 +16,7 @@ import {
 import { inputHash } from "@reel/core/hash";
 import { conformVideo, exportDeliverable, fitDuration, normalizeLoudness, probe, thumbnail, trimTrailingSilence } from "@reel/media";
 import { renderReel } from "@reel/video/render";
-import { buildSrt } from "@reel/video/srt";
+import { srtFor } from "@reel/video/srt";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
@@ -224,7 +224,7 @@ export async function renderAndExport(
     await thumbnail(master, thumb, Math.min(1, timeline.durationInFrames / 30 / 2));
     emit({ type: "step", step: "export", status: "done" });
     const srt = join(outDir, "reel.srt");
-    await writeFile(srt, buildSrt(timeline.captions.words));
+    await writeFile(srt, srtFor(timeline));
     return { timeline, master, reel, preview, thumbnail: thumb, srt };
   } finally {
     await server.close();

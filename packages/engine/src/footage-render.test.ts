@@ -1,0 +1,28 @@
+import { averageLuma, makeTestVideo } from "@reel/media";
+import { renderReelStill } from "@reel/video/render";
+import { sampleFootageTimeline } from "@reel/video/sample-footage";
+import { mkdir, mkdtemp, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import { serveDir } from "./serve";
+
+describe("footage render (speaker shot, flash)", () => {
+  it("flashes white at frame 0, then shows the zoomed speaker video", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "footage-render-"));
+    await makeTestVideo(join(dir, "speaker.mp4"), { durationSec: 6 });
+    const server = await serveDir(dir);
+    try {
+      const timeline = sampleFootageTimeline("he", server.urlFor("speaker.mp4"));
+      const out = resolve("work/stills");
+      await mkdir(out, { recursive: true });
+      await renderReelStill(timeline, join(out, "footage-flash.png"), 0);
+      await renderReelStill(timeline, join(out, "footage-speaker.png"), 50);
+      expect(await averageLuma(join(out, "footage-flash.png"))).toBeGreaterThan(200);
+      expect(await averageLuma(join(out, "footage-speaker.png"))).toBeLessThan(200);
+      expect((await stat(join(out, "footage-speaker.png"))).size).toBeGreaterThan(50_000);
+    } finally {
+      await server.close();
+    }
+  }, 300_000);
+});

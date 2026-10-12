@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createTikTokStyleCaptions } from "@remotion/captions";
 import { COMBINE_MS, wordsToCaptions } from "./Captions";
-import { buildSrt, formatSrtTime } from "./srt";
+import { buildSrt, buildSrtFromPages, formatSrtTime, srtFor } from "./srt";
+import { sampleFootageTimeline } from "./sample-footage";
+import { sampleTimeline } from "./sample-timeline";
 
 const w = (text: string, startMs: number, endMs: number) => ({ text, startMs, endMs });
 
@@ -33,4 +35,19 @@ describe("buildSrt", () => {
     expect(text.join(" ")).toBe("this caption page is definitely longer than forty two characters");
   });
   it("returns an empty string for no words", () => expect(buildSrt([])).toBe(""));
+});
+
+describe("footage SRT", () => {
+  it("uses the pill caption pages (without emoji) when the timeline has them", () => {
+    const srt = buildSrtFromPages([
+      { fromFrame: 0, durationInFrames: 30, words: [{ text: "היי", emphasis: false }, { text: "חברים,", emphasis: false }] },
+      { fromFrame: 30, durationInFrames: 15, words: [{ text: "עבודה.", emphasis: true }], emoji: "👇" },
+    ], 30);
+    expect(srt).toBe("1\n00:00:00,000 --> 00:00:01,000\nהיי חברים,\n\n2\n00:00:01,000 --> 00:00:01,500\nעבודה.\n");
+    expect(srtFor(sampleFootageTimeline("he"))).toMatch(/^1\n00:00:00,000 --> /);
+  });
+  it("keeps the old SRT for voice timelines", () => {
+    const t = sampleTimeline("he");
+    expect(srtFor(t)).toBe(buildSrt(t.captions.words));
+  });
 });

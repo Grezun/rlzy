@@ -1,4 +1,4 @@
-import type { Word } from "@reel/core";
+import type { CaptionPage, Timeline, Word } from "@reel/core";
 import { createTikTokStyleCaptions } from "@remotion/captions";
 import { COMBINE_MS, wordsToCaptions } from "./Captions";
 
@@ -27,4 +27,29 @@ export function buildSrt(words: Word[]): string {
       return `${i + 1}\n${formatSrtTime(page.startMs)} --> ${formatSrtTime(end)}\n${twoLines(text)}\n`;
     })
     .join("\n");
+}
+
+/** Footage subtitles: one cue per pill caption page, same timing as the burned-in pages (emoji left out). */
+export function buildSrtFromPages(pages: CaptionPage[], fps: number): string {
+  return pages
+    .map((p, i) => {
+      const start = (p.fromFrame / fps) * 1000;
+      const end = ((p.fromFrame + p.durationInFrames) / fps) * 1000;
+      return `${i + 1}\n${formatSrtTime(start)} --> ${formatSrtTime(end)}\n${twoLines(p.words.map((w) => w.text).join(" "))}\n`;
+    })
+    .join("\n");
+}
+
+/** The SRT that matches the burned-in captions: pill pages for footage reels, word pages for voice reels (as Reel.tsx picks). */
+export function srtFor(timeline: Timeline): string {
+  const preset = timeline.style.captionPreset;
+  switch (preset) {
+    case "pill":
+      return buildSrtFromPages(timeline.captions.pages ?? [], timeline.fps);
+    case "bold_pop":
+    case "clean":
+      return buildSrt(timeline.captions.words);
+    default:
+      return preset satisfies never;
+  }
 }
