@@ -23,6 +23,12 @@
 
 5. Check: `npm run smoke:supabase`. Preconditions: at least one invited user exists and no real jobs are queued.
 
+6. `npm run build:face-helper` builds the Swift face tracker (needs Xcode or its command line tools). The real worker refuses footage ingest without it; the fake worker falls back to centred crops.
+
+7. Supabase dashboard → Storage → Settings: raise the global upload limit to 2 GB (needed for video uploads).
+
+8. The sound-effect pack in `packages/video/assets/sfx/` is generated once with `npm run sfx:generate -- --yes` (paid; listen before committing). Without it, real reels render without sound effects and say so.
+
 ## Every day
 
 - `npm run web`: the app on http://localhost:3000

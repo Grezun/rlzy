@@ -5,3 +5,4 @@ export * from "./ops";
 export * from "./loudness";
 export * from "./export";
 export * from "./footage";
+export * from "./face";
