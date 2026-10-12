@@ -2,8 +2,8 @@ import { BUCKETS, type Database, type Json } from "@reel/db";
 import { contentTypeFor, type AssetMeta, type AssetStore, type FileAssetStore, type StoredAsset } from "@reel/engine";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdir, rm, stat } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -33,8 +33,11 @@ export interface AssetIndex {
 export class SupabaseBlobStore implements BlobStore {
   constructor(private readonly sb: SupabaseClient<Database>, private readonly fetchImpl?: typeof fetch) {}
 
+  /** Streams from disk (supabase-js sends a stream body with duplex "half"): a working copy can be hundreds of MB. */
   async upload(bucket: string, path: string, filePath: string, contentType: string): Promise<void> {
-    const { error } = await this.sb.storage.from(bucket).upload(path, await readFile(filePath), { contentType, upsert: true });
+    const { size } = await stat(filePath);
+    const body = Readable.toWeb(createReadStream(filePath)) as ReadableStream<Uint8Array>;
+    const { error } = await this.sb.storage.from(bucket).upload(path, body, { contentType, upsert: true, headers: { "content-length": String(size) } });
     if (error) throw new Error(`upload ${bucket}/${path} failed: ${error.message}`);
   }
 
@@ -163,7 +166,14 @@ export class MirroredAssetStore implements AssetStore {
 
   async putFile(hash: string, sourcePath: string, ext: string, meta: Omit<AssetMeta, "createdAt">): Promise<StoredAsset> {
     const stored = await this.local.putFile(hash, sourcePath, ext, meta);
-    await this.mirror(stored);
+    try {
+      await this.mirror(stored);
+    } catch (err) {
+      if (!meta.reproducible) throw err;
+      // Reproducible (e.g. the footage working copy): keep it local; the next get() on this machine retries the mirror.
+      this.log(`mirror failed for ${hash} (${err instanceof Error ? err.message : err}); kept locally, other workers will have to remake it`);
+      return stored;
+    }
     this.mirrored.add(hash);
     return stored;
   }

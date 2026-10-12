@@ -1,6 +1,9 @@
 import { createFakeProviders, FileAssetStore, generateAssets, serveDir, type PlanRequest } from "@reel/engine";
 import { sha256File } from "@reel/media";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { createClient } from "@supabase/supabase-js";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -149,5 +152,61 @@ describe("SupabaseBlobStore.download", () => {
     } finally {
       await server.close();
     }
+  });
+});
+
+describe("SupabaseBlobStore.upload", () => {
+  it("streams the file from disk with its length (supabase-js sends a stream body, never a buffer)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "blob-up-"));
+    const file = join(dir, "working.mp4");
+    await writeFile(file, randomBytes(3 * 1024 * 1024 + 7));
+    const received: { url: string; length?: string; type?: string; sha: string }[] = [];
+    const server = createServer((req, res) => {
+      const hash = createHash("sha256");
+      req.on("data", (c: Buffer) => hash.update(c));
+      req.on("end", () => {
+        received.push({ url: req.url ?? "", length: req.headers["content-length"], type: req.headers["content-type"], sha: hash.digest("hex") });
+        res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ Key: "assets/x", Id: "1" }));
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    const bodies: unknown[] = [];
+    const spyFetch: typeof fetch = (input, init) => {
+      bodies.push(init?.body);
+      return fetch(input, init);
+    };
+    try {
+      const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+      const sb = createClient(url, "test-key", { global: { fetch: spyFetch }, auth: { persistSession: false, autoRefreshToken: false } });
+      await new SupabaseBlobStore(sb as never).upload("assets", "abc.mp4", file, "video/mp4");
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).toBeInstanceOf(ReadableStream);
+      expect(received).toEqual([{ url: "/storage/v1/object/assets/abc.mp4", length: String(3 * 1024 * 1024 + 7), type: "video/mp4", sha: await sha256File(file) }]);
+    } finally {
+      await new Promise((r) => server.close(r));
+    }
+  });
+});
+
+describe("MirroredAssetStore best-effort mirroring", () => {
+  const failing = (blobs: InMemoryBlobStore) => ({
+    upload: async () => { throw new Error("object too large"); },
+    download: (...a: Parameters<InMemoryBlobStore["download"]>) => blobs.download(...a),
+  });
+
+  it("keeps a reproducible asset locally and logs when its mirror fails", async () => {
+    const { dir, src, blobs, index } = await setup();
+    const logs: string[] = [];
+    const store = new MirroredAssetStore(new FileAssetStore(join(dir, "a")), failing(blobs), index, (m) => logs.push(m));
+    const stored = await store.putFile(HASH, src, "mp4", { kind: "video", provider: "ffmpeg", reproducible: true });
+    expect(await readFile(stored.path, "utf8")).toBe("wav-bytes");
+    expect(index.records.has(HASH)).toBe(false);
+    expect(logs.join("\n")).toMatch(new RegExp(`mirror failed for ${HASH}.*object too large.*kept locally`));
+  });
+
+  it("still fails when a non-reproducible asset can't be mirrored", async () => {
+    const { dir, src, blobs, index } = await setup();
+    const store = new MirroredAssetStore(new FileAssetStore(join(dir, "a")), failing(blobs), index);
+    await expect(store.putFile(HASH, src, "data", { kind: "data", provider: "elevenlabs" })).rejects.toThrow(/object too large/);
   });
 });

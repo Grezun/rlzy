@@ -57,7 +57,7 @@ export async function ingestFootage(originalPath: string, deps: IngestDeps): Pro
     log("ingest: making the 1080×1920 working copy");
     const out = tmp("working.mp4");
     await conformVideo(originalPath, out, { keepAudio: true });
-    return { path: out, ext: "mp4", meta: { kind: "video", provider: "ffmpeg", extra: { originalSha } } };
+    return { path: out, ext: "mp4", meta: { kind: "video", provider: "ffmpeg", reproducible: true, extra: { originalSha } } };
   });
   const durationMs = Math.round((await probe(working.path)).durationSec * 1000);
   emit({ type: "step", step: "conform", status: "done" });

@@ -11,6 +11,8 @@ export type AssetMeta = {
   estUsd?: number;
   createdAt: string;
   extra?: Record<string, unknown>;
+  /** Made locally from other cached inputs at no provider cost: a mirrored store may keep it local-only if mirroring fails. */
+  reproducible?: boolean;
 };
 export type StoredAsset = { hash: string; fileName: string; path: string; meta: AssetMeta };
 

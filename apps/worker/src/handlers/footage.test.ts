@@ -6,7 +6,8 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { InMemoryBlobStore, InMemoryReelDb, makeJob } from "../testing/fakes";
+import { MirroredAssetStore } from "../storage";
+import { InMemoryAssetIndex, InMemoryBlobStore, InMemoryReelDb, makeJob } from "../testing/fakes";
 import { createIngestFootageHandler, createPlanFootageHandler } from "./footage";
 
 const PID = "0b5f8f9e-5c1d-4a43-9d4e-2f1c3b4a5d6e";
@@ -25,7 +26,7 @@ async function setup() {
   const requests: FootagePlanRequest[] = [];
   const footagePlanner = { plan: async (r: FootagePlanRequest) => { requests.push(r); return providers.footagePlanner.plan(r); } };
   const deps = { store: new FileAssetStore(join(dir, "cache")), blobs, db, transcriber: providers.transcriber, faceTracker: noFaceTracker, footagePlanner };
-  return { db, deps, requests, providers };
+  return { dir, db, deps, requests, providers };
 }
 
 const ingestJob = (over: Partial<{ project_id: string; settings: typeof settings | { language: string; targetDurationSec: number } }> = {}) =>
@@ -136,5 +137,38 @@ describe("plan_footage (Re-plan)", () => {
     await expect(createPlanFootageHandler(real)(makeJob({ type: "plan_footage", project_id: PID, payload: { settings, source: s.source, fromStoryboardId: s.first.id } }), ctx)).rejects.toThrow(/fake\/scribe/);
     expect(s.requests).toHaveLength(1);
     expect(s.db.projectStatus.get(PID)?.status).toBe("draft");
+  }, 300_000);
+});
+
+describe("ingest_footage with a mirrored asset store", () => {
+  /** Mirror uploads fail for files with this extension; the upload itself still downloads from s.deps.blobs. */
+  async function mirrored(failExt: string) {
+    const s = await setup();
+    const mirrorBlobs = new InMemoryBlobStore();
+    const flaky = {
+      upload: async (bucket: string, path: string, file: string) => {
+        if (path.endsWith(`.${failExt}`)) throw new Error("object too large");
+        return mirrorBlobs.upload(bucket, path, file);
+      },
+      download: (...a: Parameters<InMemoryBlobStore["download"]>) => mirrorBlobs.download(...a),
+    };
+    const logs: string[] = [];
+    const store = new MirroredAssetStore(new FileAssetStore(join(s.dir, "mcache")), flaky, new InMemoryAssetIndex(), (m) => logs.push(m));
+    return { ...s, deps: { ...s.deps, store }, logs, mirrorBlobs };
+  }
+
+  it("a failed working-copy mirror logs a warning and ingest still completes", async () => {
+    const s = await mirrored("mp4");
+    const outcome = await createIngestFootageHandler(s.deps)(ingestJob(), ctx);
+    expect(outcome.status).toBe("done");
+    expect(s.logs.join("\n")).toMatch(/mirror failed .*object too large.*kept locally/);
+    expect([...s.mirrorBlobs.objects.keys()].filter((k) => k.endsWith(".data"))).toHaveLength(2);
+    expect(s.db.projectStatus.get(PID)?.status).toBe("draft");
+  }, 300_000);
+
+  it("a failed transcript mirror still fails ingest", async () => {
+    const s = await mirrored("data");
+    await expect(createIngestFootageHandler(s.deps)(ingestJob(), ctx)).rejects.toThrow(/object too large/);
+    expect(s.db.projectStatus.get(PID)?.status).toBe("failed");
   }, 300_000);
 });
