@@ -1,9 +1,11 @@
-import { createFakeProviders, FileAssetStore, generateAssets, type PlanRequest } from "@reel/engine";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { createFakeProviders, FileAssetStore, generateAssets, serveDir, type PlanRequest } from "@reel/engine";
+import { sha256File } from "@reel/media";
+import { randomBytes } from "node:crypto";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { MirroredAssetStore } from "./storage";
+import { MirroredAssetStore, SupabaseBlobStore } from "./storage";
 import { InMemoryAssetIndex, InMemoryBlobStore } from "./testing/fakes";
 
 const HASH = "a".repeat(64);
@@ -116,4 +118,36 @@ describe("MirroredAssetStore", () => {
     await generateAssets(sb, { providers, store: new MirroredAssetStore(new FileAssetStore(join(dir, "B")), blobs, index), tmpDir: join(dir, "tB"), log });
     expect(providers.calls).toEqual(before);
   }, 300_000);
+});
+
+describe("SupabaseBlobStore.download", () => {
+  const stub = (signedUrl: string) =>
+    ({ storage: { from: () => ({ createSignedUrl: async () => ({ data: { signedUrl }, error: null }) }) } }) as never;
+
+  it("streams a large object from a signed URL to disk, byte for byte", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "blob-dl-"));
+    await mkdir(join(dir, "src"));
+    await writeFile(join(dir, "src", "big.bin"), randomBytes(5 * 1024 * 1024));
+    const server = await serveDir(join(dir, "src"));
+    try {
+      await new SupabaseBlobStore(stub(server.urlFor("big.bin"))).download("assets", "footage/x/source.mp4", join(dir, "copy.bin"));
+      expect(await sha256File(join(dir, "copy.bin"))).toBe(await sha256File(join(dir, "src", "big.bin")));
+    } finally {
+      await server.close();
+    }
+  });
+
+  it("fails with the HTTP status and without the signed token", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "blob-dl-"));
+    const server = await serveDir(dir);
+    try {
+      const store = new SupabaseBlobStore(stub(`${server.urlFor("missing.bin")}?token=secret`));
+      const err = await store.download("assets", "footage/x/source.mp4", join(dir, "copy.bin")).catch((e: Error) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toMatch(/download assets\/footage\/x\/source\.mp4 failed: HTTP 404/);
+      expect((err as Error).message).not.toMatch(/secret/);
+    } finally {
+      await server.close();
+    }
+  });
 });

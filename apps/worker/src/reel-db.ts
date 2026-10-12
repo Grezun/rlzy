@@ -1,12 +1,17 @@
-import type { Storyboard, Timeline } from "@reel/core";
+import { MusicMoodSchema, type EditPlan, type MusicMood, type Storyboard, type Timeline } from "@reel/core";
 import type { Database, Json, ProjectStatus } from "@reel/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type StoryboardRecord = { id: string; projectId: string; version: number; json: unknown; status: "draft" | "approved" | "superseded" };
+export type TeamTrack = { id: string; storagePath: string; title: string; mood: MusicMood; durationSec: number };
 
 export interface ReelDb {
   nextStoryboardVersion(projectId: string): Promise<number>;
-  insertStoryboard(input: { projectId: string; version: number; json: Storyboard; createdBy: "agent" | "user" }): Promise<string>;
+  insertStoryboard(input: { projectId: string; version: number; json: Storyboard | EditPlan; createdBy: "agent" | "user" }): Promise<string>;
+  /** Marks this project's drafts superseded, except `keepId` (the draft that replaces them). Re-plan keeps them for history. */
+  supersedeDrafts(projectId: string, keepId: string): Promise<void>;
+  listTeamMusic(): Promise<TeamTrack[]>;
+  getTeamTrack(id: string): Promise<TeamTrack | null>;
   getStoryboard(id: string): Promise<StoryboardRecord | null>;
   setProjectStatus(projectId: string, status: ProjectStatus, title?: string): Promise<void>;
   hasRender(storyboardId: string): Promise<boolean>;
@@ -18,6 +23,11 @@ export interface ReelDb {
     timeline: Timeline;
   }): Promise<void>;
 }
+
+const TRACK_COLUMNS = "id, storage_path, title, mood, duration_sec";
+const toTrack = (r: { id: string; storage_path: string; title: string; mood: string; duration_sec: number }): TeamTrack => ({
+  id: r.id, storagePath: r.storage_path, title: r.title, mood: MusicMoodSchema.parse(r.mood), durationSec: Number(r.duration_sec),
+});
 
 const check = (what: string, error: { message: string } | null) => {
   if (error) throw new Error(`${what} failed: ${error.message}`);
@@ -45,6 +55,23 @@ export class SupabaseReelDb implements ReelDb {
     const { data, error } = await this.sb.from("storyboards").select("id, project_id, version, json, status").eq("id", id).maybeSingle();
     check("storyboard lookup", error);
     return data ? { id: data.id, projectId: data.project_id, version: data.version, json: data.json, status: data.status as StoryboardRecord["status"] } : null;
+  }
+
+  async supersedeDrafts(projectId: string, keepId: string) {
+    const { error } = await this.sb.from("storyboards").update({ status: "superseded" }).eq("project_id", projectId).eq("status", "draft").neq("id", keepId);
+    check("supersede drafts", error);
+  }
+
+  async listTeamMusic() {
+    const { data, error } = await this.sb.from("team_music").select(TRACK_COLUMNS).order("created_at");
+    check("music list", error);
+    return (data ?? []).map(toTrack);
+  }
+
+  async getTeamTrack(id: string) {
+    const { data, error } = await this.sb.from("team_music").select(TRACK_COLUMNS).eq("id", id).maybeSingle();
+    check("music lookup", error);
+    return data ? toTrack(data) : null;
   }
 
   async setProjectStatus(projectId: string, status: ProjectStatus, title?: string) {

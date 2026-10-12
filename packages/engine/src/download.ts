@@ -11,6 +11,7 @@ const CONTENT_TYPES: Record<string, string> = {
   wav: "audio/wav",
   mp3: "audio/mpeg",
   json: "application/json",
+  data: "application/json", // asset-store JSON payloads (transcripts, face tracks)
 };
 
 export function contentTypeFor(fileName: string): string {

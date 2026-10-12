@@ -9,6 +9,7 @@
     "@reel/engine": "*",
     "@reel/media": "*",
     "@reel/styles": "*",
+    "@reel/video": "*",
     "@supabase/supabase-js": "2.117.2"
   }
 }

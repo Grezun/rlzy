@@ -2,8 +2,12 @@ import { BUCKETS, type Database, type Json } from "@reel/db";
 import { contentTypeFor, type AssetMeta, type AssetStore, type FileAssetStore, type StoredAsset } from "@reel/engine";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createWriteStream } from "node:fs";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { extname, join } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as WebReadableStream } from "node:stream/web";
 
 export interface BlobStore {
   upload(bucket: string, path: string, filePath: string, contentType: string): Promise<void>;
@@ -27,17 +31,23 @@ export interface AssetIndex {
 }
 
 export class SupabaseBlobStore implements BlobStore {
-  constructor(private readonly sb: SupabaseClient<Database>) {}
+  constructor(private readonly sb: SupabaseClient<Database>, private readonly fetchImpl?: typeof fetch) {}
 
   async upload(bucket: string, path: string, filePath: string, contentType: string): Promise<void> {
     const { error } = await this.sb.storage.from(bucket).upload(path, await readFile(filePath), { contentType, upsert: true });
     if (error) throw new Error(`upload ${bucket}/${path} failed: ${error.message}`);
   }
 
+  /** Streams to disk through a signed URL: a footage upload can be 2 GB, too big to buffer. */
   async download(bucket: string, path: string, destPath: string): Promise<void> {
-    const { data, error } = await this.sb.storage.from(bucket).download(path);
-    if (error || !data) throw new Error(`download ${bucket}/${path} failed: ${error?.message ?? "no data"}`);
-    await writeFile(destPath, Buffer.from(await data.arrayBuffer()));
+    const { data, error } = await this.sb.storage.from(bucket).createSignedUrl(path, 600);
+    if (error || !data) throw new Error(`download ${bucket}/${path} failed: ${error?.message ?? "no signed URL"}`);
+    const res = await (this.fetchImpl ?? fetch)(data.signedUrl);
+    if (!res.ok || !res.body) {
+      await res.body?.cancel().catch(() => {});
+      throw new Error(`download ${bucket}/${path} failed: HTTP ${res.status}`);
+    }
+    await pipeline(Readable.fromWeb(res.body as WebReadableStream), createWriteStream(destPath));
   }
 }
 

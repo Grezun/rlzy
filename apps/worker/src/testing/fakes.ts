@@ -1,7 +1,7 @@
 import type { JobProgress, JobRow, ProjectStatus } from "@reel/db";
 import { readFile, writeFile } from "node:fs/promises";
 import type { JobOutcome, JobQueue } from "../queue";
-import type { ReelDb, StoryboardRecord } from "../reel-db";
+import type { ReelDb, StoryboardRecord, TeamTrack } from "../reel-db";
 import type { AssetIndex, AssetRecord, BlobStore } from "../storage";
 
 export function makeJob(partial: Partial<JobRow> = {}): JobRow {
@@ -96,6 +96,7 @@ export class InMemoryReelDb implements ReelDb {
   readonly storyboards: StoryboardRecord[] = [];
   readonly renders: Parameters<ReelDb["insertRender"]>[0][] = [];
   readonly projectStatus = new Map<string, { status: ProjectStatus; title?: string }>();
+  readonly music: TeamTrack[] = [];
 
   async nextStoryboardVersion(projectId: string) {
     return Math.max(0, ...this.storyboards.filter((s) => s.projectId === projectId).map((s) => s.version)) + 1;
@@ -107,6 +108,15 @@ export class InMemoryReelDb implements ReelDb {
   }
   async getStoryboard(id: string) {
     return this.storyboards.find((s) => s.id === id) ?? null;
+  }
+  async supersedeDrafts(projectId: string, keepId: string) {
+    for (const s of this.storyboards) if (s.projectId === projectId && s.status === "draft" && s.id !== keepId) s.status = "superseded";
+  }
+  async listTeamMusic() {
+    return [...this.music];
+  }
+  async getTeamTrack(id: string) {
+    return this.music.find((t) => t.id === id) ?? null;
   }
   async setProjectStatus(projectId: string, status: ProjectStatus, title?: string) {
     this.projectStatus.set(projectId, { status, ...(title ? { title } : {}) });

@@ -49,12 +49,12 @@ export const hashes = {
   fit: (sourceHash: string, targetMs: number) => inputHash({ step: "fit", v: 1, sourceHash, targetMs }),
 };
 
-const estUsd = (model: string, key: "perImage" | "perSecond" | "per1kChars", quantity: number) => {
+export const estUsd = (model: string, key: "perImage" | "perSecond" | "per1kChars", quantity: number) => {
   const price = DEFAULT_COST_TABLE[model]?.[key];
   return price === undefined ? undefined : price * quantity;
 };
 
-async function cached(
+export async function cached(
   store: AssetStore,
   hash: string,
   create: () => Promise<{ path: string; ext: string; meta: Omit<AssetMeta, "createdAt"> }>,

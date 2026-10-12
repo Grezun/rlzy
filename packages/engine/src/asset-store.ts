@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, copyFile, mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-export type AssetKind = "image" | "video" | "audio";
+export type AssetKind = "image" | "video" | "audio" | "data";
 export type AssetMeta = {
   kind: AssetKind;
   provider: string;
@@ -52,6 +52,8 @@ export class FileAssetStore implements AssetStore {
   }
 
   async putFile(hash: string, sourcePath: string, ext: string, meta: Omit<AssetMeta, "createdAt">): Promise<StoredAsset> {
+    // <hash>.json is this asset's metadata file: a "json" payload would overwrite itself.
+    if (ext.toLowerCase() === "json") throw new Error('Asset files can\'t use the "json" extension (it holds the metadata): store JSON data with ext "data".');
     await mkdir(this.root, { recursive: true });
     const fileName = `${hash}.${ext}`;
     const filePath = path.join(this.root, fileName);

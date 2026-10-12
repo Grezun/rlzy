@@ -1,5 +1,5 @@
 import type { Database } from "@reel/db";
-import { costModels, createPlannerFor, createProviders, FileAssetStore, loadConfig, loadEnvFile } from "@reel/engine";
+import { costModels, createFaceTracker, createFootagePlannerFor, createPlannerFor, createProviders, FileAssetStore, loadConfig, loadEnvFile } from "@reel/engine";
 import { assertFfmpegAvailable } from "@reel/media";
 import { createClient } from "@supabase/supabase-js";
 import { mkdtemp } from "node:fs/promises";
@@ -23,11 +23,12 @@ const sb = createClient<Database>(env.supabaseUrl, env.supabaseSecretKey, { auth
 const workDir = await mkdtemp(join(tmpdir(), "reel-worker-"));
 const fake = env.providers === "fake";
 const blobs = new SupabaseBlobStore(sb);
+const providers = createProviders(config, workDir, { log });
 
 const handlers = buildHandlers({
   mode: fake ? "fake" : "real",
   planner: createPlannerFor(config, workDir),
-  providers: createProviders(config, workDir, { log }),
+  providers,
   store: new MirroredAssetStore(new FileAssetStore(fake ? join(config.cacheDir, "fake") : config.cacheDir), blobs, new SupabaseAssetIndex(sb), log),
   blobs,
   db: new SupabaseReelDb(sb),
@@ -35,6 +36,9 @@ const handlers = buildHandlers({
   voiceModelId: config.elevenlabs.modelId,
   spendCapUsd: config.spendCapUsd,
   costModels: costModels(config),
+  transcriber: providers.transcriber,
+  faceTracker: createFaceTracker(fake ? "fake" : "real"),
+  footagePlanner: createFootagePlannerFor(config, workDir),
 });
 
 const controller = new AbortController();

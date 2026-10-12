@@ -6,7 +6,7 @@ export type { Database, Json } from "./database.types";
 
 export const BUCKETS = { assets: "assets", renders: "renders" } as const;
 
-export type JobType = "plan" | "generate";
+export type JobType = "plan" | "generate" | "ingest_footage" | "plan_footage";
 export type JobStatus = "queued" | "running" | "needs_attention" | "done" | "failed";
 export type ProjectStatus = "uploading" | "planning" | "draft" | "generating" | "needs_attention" | "rendered" | "failed";
 

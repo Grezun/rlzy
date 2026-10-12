@@ -1,5 +1,6 @@
 import type { Handlers } from "../loop";
 import { FAKE_VOICE_ID } from "../fake-voice";
+import { createIngestFootageHandler, createPlanFootageHandler, type FootageHandlerDeps } from "./footage";
 import { createGenerateHandler, type GenerateHandlerDeps } from "./generate";
 import { createPlanHandler, type PlanHandlerDeps } from "./plan";
 
@@ -14,11 +15,17 @@ export type BuildHandlersDeps = {
   voiceModelId: string;
   spendCapUsd: number;
   costModels: GenerateHandlerDeps["costModels"];
+  transcriber: FootageHandlerDeps["transcriber"];
+  faceTracker: FootageHandlerDeps["faceTracker"];
+  footagePlanner: FootageHandlerDeps["footagePlanner"];
 };
 
 /** Fake workers only plan and generate with the fake voice; real workers refuse storyboards that use it. */
 export function buildHandlers(deps: BuildHandlersDeps): Handlers {
   const fake = deps.mode === "fake";
+  const footage: FootageHandlerDeps = {
+    store: deps.store, blobs: deps.blobs, db: deps.db, transcriber: deps.transcriber, faceTracker: deps.faceTracker, footagePlanner: deps.footagePlanner,
+  };
   return {
     plan: createPlanHandler({
       planner: deps.planner, db: deps.db, voices: deps.voices, voiceModelId: deps.voiceModelId,
@@ -29,5 +36,7 @@ export function buildHandlers(deps: BuildHandlersDeps): Handlers {
       spendCapUsd: deps.spendCapUsd, costModels: deps.costModels,
       ...(fake ? { requireVoiceId: FAKE_VOICE_ID } : { forbidVoiceId: FAKE_VOICE_ID }),
     }),
+    ingest_footage: createIngestFootageHandler(footage),
+    plan_footage: createPlanFootageHandler(footage),
   };
 }
