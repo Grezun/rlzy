@@ -47,7 +47,7 @@ describe("finishFootage", () => {
     const d = deps({ setStatus: async () => { throw new Error("timeout"); } });
     const r = await finishFootage(d, input);
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.errors[0]).toMatch(/queued, but .*timeout/);
+    expect(r).toEqual({ ok: false, errors: [expect.stringMatching(/queued, but .*timeout/)], queued: true });
   });
   it.each([
     ["another project's path", { storagePath: "footage/11111111-2222-4333-8444-555555555555/source.mov" }, deps(), /doesn't belong to this reel/],
@@ -58,5 +58,7 @@ describe("finishFootage", () => {
     const r = await finishFootage(d, { ...input, ...over });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.errors.join(" ")).toMatch(message);
+    // Only a job that already exists makes a retry pointless.
+    if (!r.ok) expect(r.queued ?? false).toBe(/submitted|queued/.test(String(message)));
   });
 });

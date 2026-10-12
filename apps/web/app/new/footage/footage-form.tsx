@@ -1,14 +1,16 @@
 "use client";
 import { checkFootageFile, footageExt, type FootageSettings } from "@reel/core";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { parseFootageSettings } from "@/lib/footage-form";
+import { retryLabel, sendFootage, type SendOutcome } from "@/lib/footage-send";
 import { readVideoDuration, uploadFootageFile } from "@/lib/footage-upload";
 import { createClient } from "@/lib/supabase/client";
 import { finishFootageUpload, startFootageUpload } from "./actions";
 
 type Started = { projectId: string; storagePath: string; settings: FootageSettings };
-type Phase = "idle" | "checking" | "starting" | "uploading" | "finishing" | "interrupted" | "failed";
+type Phase = "idle" | "checking" | "starting" | "uploading" | "finishing" | "stopped";
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -21,6 +23,9 @@ export function FootageForm({ supabaseUrl }: { supabaseUrl: string }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [progress, setProgress] = useState(0);
   const [started, setStarted] = useState<Started | null>(null);
+  /** The file is in storage: a retry only records it, it never sends the file again. */
+  const [uploaded, setUploaded] = useState(false);
+  const [outcome, setOutcome] = useState<SendOutcome | null>(null);
   const busy = phase === "checking" || phase === "starting" || phase === "uploading" || phase === "finishing";
 
   // Closing the tab mid-upload leaves the reel in "Upload incomplete": warn first.
@@ -42,35 +47,28 @@ export function FootageForm({ supabaseUrl }: { supabaseUrl: string }) {
     setPhase("idle");
   }
 
-  /** Uploads (resuming any earlier attempt to the same object), then records the upload. */
-  async function send(f: File, s: Started) {
+  /** Uploads (resuming any earlier attempt to the same object) unless already uploaded, then records the upload. */
+  async function send(f: File, s: Started, alreadyUploaded: boolean) {
     setErrors([]);
-    setPhase("uploading");
-    try {
-      await uploadFootageFile(f, {
+    setOutcome(null);
+    setPhase(alreadyUploaded ? "finishing" : "uploading");
+    const o = await sendFootage({
+      upload: () => uploadFootageFile(f, {
         supabaseUrl,
         bucket: "assets",
         objectName: s.storagePath,
         contentType: f.type || (footageExt(f.name) === "mov" ? "video/quicktime" : "video/mp4"),
         getToken: async () => (await createClient().auth.getSession()).data.session?.access_token ?? "",
         onProgress: setProgress,
-      });
-    } catch (err) {
-      setErrors([`Upload interrupted: ${message(err)}. Check your connection and press Resume upload: it continues where it stopped.`]);
-      return setPhase("interrupted");
-    }
-    setPhase("finishing");
-    try {
-      const done = await finishFootageUpload(s);
-      if (!done.ok) {
-        setErrors(done.errors);
-        return setPhase("failed");
-      }
-    } catch (err) {
-      setErrors([`Couldn't record the upload: ${message(err)}`]);
-      return setPhase("failed");
-    }
-    router.push(`/projects/${s.projectId}`);
+      }),
+      onUploaded: () => { setUploaded(true); setPhase("finishing"); },
+      finish: () => finishFootageUpload(s),
+    }, alreadyUploaded);
+    if (o.kind === "done") return router.push(`/projects/${s.projectId}`);
+    if (o.kind === "failed") setUploaded(o.uploaded);
+    setErrors(o.errors);
+    setOutcome(o);
+    setPhase("stopped");
   }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
@@ -88,7 +86,7 @@ export function FootageForm({ supabaseUrl }: { supabaseUrl: string }) {
       }
       const s = { projectId: r.projectId, storagePath: r.storagePath, settings: parsed.settings };
       setStarted(s);
-      await send(file, s);
+      await send(file, s, false);
     } catch (err) {
       setErrors([`Couldn't create the reel: ${message(err)}`]);
       setPhase("idle");
@@ -118,7 +116,7 @@ export function FootageForm({ supabaseUrl }: { supabaseUrl: string }) {
         </label>
       </fieldset>
       {fileErrors.length > 0 && <ul role="alert" className="error">{fileErrors.map((m) => <li key={m}>{m}</li>)}</ul>}
-      {(phase === "uploading" || phase === "finishing" || phase === "interrupted") && (
+      {(phase === "uploading" || phase === "finishing" || outcome?.kind === "interrupted") && (
         <div className="stack">
           <progress value={progress} max={1} />
           {phase === "uploading" && <p className="muted">Uploading… {Math.round(progress * 100)}%. Keep this tab open.</p>}
@@ -127,8 +125,10 @@ export function FootageForm({ supabaseUrl }: { supabaseUrl: string }) {
       )}
       {errors.length > 0 && <ul role="alert" className="error">{errors.map((m) => <li key={m}>{m}</li>)}</ul>}
       <div className="row">
-        {started && file && (phase === "interrupted" || phase === "failed") ? (
-          <button type="button" className="primary" onClick={() => void send(file, started)}>{phase === "interrupted" ? "Resume upload" : "Try again"}</button>
+        {started && outcome?.kind === "queued" ? (
+          <Link className="button primary" href={`/projects/${started.projectId}`}>Open the reel</Link>
+        ) : started && file && outcome && retryLabel(outcome) ? (
+          <button type="button" className="primary" onClick={() => void send(file, started, uploaded)}>{retryLabel(outcome)}</button>
         ) : (
           <button type="submit" className="primary" disabled={locked || fileErrors.length > 0}>
             {phase === "checking" ? "Checking the video…" : busy ? "Uploading…" : "Upload and plan"}
