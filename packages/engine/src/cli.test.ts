@@ -80,11 +80,13 @@ describe("reel CLI", () => {
     const prev = process.env.REEL_CACHE_DIR;
     process.env.REEL_CACHE_DIR = cache;
     try {
-      vi.spyOn(console, "log").mockImplementation(() => {});
+      const log = vi.spyOn(console, "log").mockImplementation(() => {});
       vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       await main(["plan", "--brief", "x", "--out", dir, "--lang", "en", "--length", "15", "--fake"]);
       await main(["make", dir, "--fake"]);
       expect(process.exitCode ?? 0).toBe(0);
+      const done = log.mock.calls.map((c) => String(c[0])).find((l) => l.includes("Done:"));
+      expect(done).toContain(`subtitles: ${join(dir, "renders", "v1", "reel.srt")}`);
       expect((await readdir(join(cache, "fake"))).length).toBeGreaterThan(0);
       expect((await readdir(cache)).filter((f) => f !== "fake")).toEqual([]);
     } finally {

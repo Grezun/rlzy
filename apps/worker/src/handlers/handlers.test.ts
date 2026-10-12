@@ -87,6 +87,17 @@ describe("plan handler with a style", () => {
     expect(st.script).toBe("שלום עולם");
   });
 
+  it("drafts the voiceover when the style payload has no script", async () => {
+    const { calls, handler } = await recording();
+    const { script: _omit, ...noScript } = MYTH;
+    await handler(makeJob({ type: "plan", project_id: "p9", payload: { ...FORM, brief: "Myth vs Fact: שינה", style: noScript } }), ctx().ctx);
+    const st = calls[0].style!;
+    expect(st.brief).toMatch(/Exact Hebrew narration: not provided: draft one/);
+    expect(st.brief).not.toMatch(/\{\{/);
+    expect(st.script).toBeUndefined();
+    expect("script" in st).toBe(false);
+  });
+
   it.each([["presenter"], ["no-such-style"], ["custom"]])("refuses style %s and marks the project failed", async (id) => {
     const { s, handler } = await recording();
     await expect(handler(makeJob({ type: "plan", project_id: "p6", payload: { ...FORM, style: { id, values: { TOPIC: "t", MAIN_MESSAGE: "m" } } } }), ctx().ctx)).rejects.toThrow(/not available/);
