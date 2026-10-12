@@ -1,8 +1,10 @@
-import { PermanentProviderError } from "@reel/core";
+import { PermanentProviderError, type EditPlanDraft } from "@reel/core";
+import { houseStyle } from "@reel/video/house-style";
 import { makeTestImage, makeTestTone, makeTestVideo, probe } from "@reel/media";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createFootagePlanner, type FootagePlanner } from "../footage-planner";
 import { buildStoryboard } from "../planner";
 import type { Planner, PlanRequest, Providers } from "./types";
 
@@ -23,7 +25,7 @@ export function createFakeProviders(opts: { workDir: string; failPromptsContaini
   let n = 0;
   const nextFile = (ext: string) => join(opts.workDir, `fake-${++n}.${ext}`);
 
-  const providers: Providers & { planner: Planner; calls: typeof calls } = {
+  const providers: Providers & { planner: Planner; footagePlanner: FootagePlanner; calls: typeof calls } = {
     calls,
     image: {
       model: "fake/image",
@@ -100,6 +102,22 @@ export function createFakeProviders(opts: { workDir: string; failPromptsContaini
         );
       },
     },
+    footagePlanner: createFootagePlanner(async ({ user }) => {
+      calls.plan++;
+      const ids = [...user.matchAll(/^(b\d+) \(/gm)].map((m) => m[1]);
+      const he = /Reel language: Hebrew/.test(user);
+      const keyword = user.match(/Comment keyword from the user: "([^"]+)"/)?.[1];
+      const trackId = user.match(/^- ([0-9a-f-]{36}) "/m)?.[1];
+      const draft: EditPlanDraft = {
+        title: he ? "עריכה לדוגמה" : "Sample edit",
+        beats: ids.map((id) => ({ id, keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "" })),
+        hook: { coldOpenBeatId: "", headlineSmall: he ? "הטריק ש" : "The trick that", headlineBig: he ? "חוסך שעות" : "saves hours", patternBreak: "zoom_hit", reason: "Fake planner: a headline and a punch-in." },
+        ending: { kind: keyword ? "cta" : "loop", keyword: keyword ?? "" },
+        music: trackId ? { kind: "library", trackId, prompt: "" } : { kind: "ai", trackId: "", prompt: "calm lo-fi beat" },
+        sfx: "subtle",
+      };
+      return { stopReason: "end_turn", draft, raw: JSON.stringify(draft) };
+    }, houseStyle.edit),
   };
   return providers;
 }

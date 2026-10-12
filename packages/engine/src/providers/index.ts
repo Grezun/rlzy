@@ -1,6 +1,8 @@
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireRealCredentials, type EngineConfig } from "../config";
+import { houseStyle } from "@reel/video/house-style";
+import { claudeEditDraftModel, createFootagePlanner, type FootagePlanner } from "../footage-planner";
 import { claudeDraftModel, createPlanner } from "../planner";
 import { ElevenLabsMusic, ElevenLabsVoice, ScribeTranscriber, sdkElevenLabs, sdkElevenLabsFootage } from "./elevenlabs";
 import { FilePendingStore } from "../pending-store";
@@ -31,4 +33,10 @@ export function createProviders(config: EngineConfig, workDir: string, opts?: { 
 export function createPlannerFor(config: EngineConfig, workDir: string): Planner {
   if (config.providers === "fake") return createFakeProviders({ workDir }).planner;
   return createPlanner(claudeDraftModel(new Anthropic(), config.claudeModel));
+}
+
+/** Footage planning needs only Claude. */
+export function createFootagePlannerFor(config: EngineConfig, workDir: string): FootagePlanner {
+  if (config.providers === "fake") return createFakeProviders({ workDir }).footagePlanner;
+  return createFootagePlanner(claudeEditDraftModel(new Anthropic(), config.claudeModel), houseStyle.edit);
 }

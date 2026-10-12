@@ -124,11 +124,12 @@ export function parseEditPlan(input: unknown): EditPlan {
 
 /**
  * What Claude writes. Free of min/max constraints (structured outputs don't enforce them); empty strings and -1 mean
- * "none". Code fills in the beat spans, source, estimate and warnings, then validates with parseEditPlan.
+ * "none". emphasisWordIdx is a plain number (z.number().int() would emit safe-integer bounds); parseEditPlan checks it
+ * is an integer. Code fills in the beat spans, source, estimate and warnings, then validates with parseEditPlan.
  */
 export const EditPlanDraftSchema = z.object({
   title: z.string(),
-  beats: z.array(z.object({ id: z.string(), keep: z.boolean(), dropReason: z.string(), emphasisWordIdx: z.number().int(), emoji: z.string() })),
+  beats: z.array(z.object({ id: z.string(), keep: z.boolean(), dropReason: z.string(), emphasisWordIdx: z.number(), emoji: z.string() })),
   hook: z.object({
     coldOpenBeatId: z.string(),
     headlineSmall: z.string(),

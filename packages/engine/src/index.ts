@@ -9,3 +9,4 @@ export * from "./pending-store";
 export * from "./providers/types";
 export { createFakeProviders } from "./providers/fake";
 export { withRetry, Semaphore } from "./retry";
+export * from "./footage-planner";

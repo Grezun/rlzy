@@ -53,6 +53,9 @@ describe("plan 1 limits", () => {
     const json = JSON.stringify(EditPlanDraftSchema.toJSONSchema());
     expect(json).not.toMatch(/cutaway|background|broll/);
   });
+  it("sends Claude a draft schema without min/max bounds", () => {
+    expect(JSON.stringify(EditPlanDraftSchema.toJSONSchema())).not.toMatch(/minimum|maximum|minLength|maxLength/);
+  });
 });
 
 describe("footage data schemas", () => {
