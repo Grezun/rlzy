@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPipelineEvent, emptyProgress, GenerateJobPayloadSchema, IngestFootageJobPayloadSchema, JobProgressSchema, renderPaths } from "./index";
+import { applyPipelineEvent, emptyProgress, GenerateJobPayloadSchema, IngestFootageJobPayloadSchema, JobProgressSchema, PlanFootageJobPayloadSchema, renderPaths } from "./index";
 
 describe("@reel/db", () => {
   it("folds pipeline events into job progress", () => {
@@ -48,5 +48,14 @@ describe("footage payloads and progress", () => {
     p = applyPipelineEvent(p, { type: "note", message: "AI music failed twice" });
     p = applyPipelineEvent(p, { type: "note", message: "No sound effects" });
     expect(JobProgressSchema.parse(p)).toEqual({ steps: { transcribe: "running" }, scenes: {}, notes: ["AI music failed twice", "No sound effects"] });
+  });
+  it("validates the plan-footage payload", () => {
+    const base = {
+      settings: { language: "he", targetDurationSec: 30 },
+      source: { assetId: "a".repeat(64), durationMs: 9000, transcriptAssetId: "b".repeat(64), faceTrackAssetId: "c".repeat(64) },
+    };
+    expect(PlanFootageJobPayloadSchema.parse(base).instruction).toBeUndefined();
+    expect(() => PlanFootageJobPayloadSchema.parse({ ...base, instruction: "x".repeat(501) })).toThrow();
+    expect(() => PlanFootageJobPayloadSchema.parse({ ...base, fromStoryboardId: "not-a-uuid" })).toThrow();
   });
 });

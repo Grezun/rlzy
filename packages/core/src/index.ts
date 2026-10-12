@@ -12,3 +12,5 @@ export * from "./timeline-sources";
 export * from "./length";
 export * from "./script-match";
 export * from "./footage-form";
+export * from "./schema/footage";
+export * from "./schema/edit-plan";

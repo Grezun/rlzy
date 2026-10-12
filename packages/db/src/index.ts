@@ -1,4 +1,4 @@
-import { FOOTAGE_PATH_RE, FootageSettingsSchema, PlanFormSchema, type PipelineEvent } from "@reel/core";
+import { FOOTAGE_PATH_RE, FootageSettingsSchema, FootageSourceSchema, PlanFormSchema, type PipelineEvent } from "@reel/core";
 import * as z from "zod";
 import type { Database } from "./database.types";
 
@@ -21,6 +21,14 @@ export const PlanJobPayloadSchema = PlanFormSchema;
 export const GenerateJobPayloadSchema = z.object({ storyboardId: z.uuid() });
 export const IngestFootageJobPayloadSchema = z.object({ storagePath: z.string().regex(FOOTAGE_PATH_RE), settings: FootageSettingsSchema });
 export type IngestFootagePayload = z.infer<typeof IngestFootageJobPayloadSchema>;
+export const PlanFootageJobPayloadSchema = z.object({
+  settings: FootageSettingsSchema,
+  source: FootageSourceSchema,
+  /** Re-plan: the plan the user was looking at, given to Claude as context. */
+  fromStoryboardId: z.uuid().optional(),
+  instruction: z.string().trim().min(1).max(500).optional(),
+});
+export type PlanFootagePayload = z.infer<typeof PlanFootageJobPayloadSchema>;
 
 const StepStatusSchema = z.enum(["running", "done"]);
 export const JobProgressSchema = z.object({
