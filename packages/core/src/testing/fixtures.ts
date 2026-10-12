@@ -1,4 +1,5 @@
-import type { Transcript } from "../schema/footage";
+import type { EditStyle } from "../footage/style";
+import type { FaceTrack, Transcript } from "../schema/footage";
 export const validStoryboard = () => ({
   version: 1,
   title: "3 tips",
@@ -65,4 +66,19 @@ export const validEditPlan = () => ({
   sfx: "subtle" as const,
   estimate: { durationSec: 0, credits: 0 },
   warnings: [] as string[],
+});
+
+export const testEditStyle = (): EditStyle => ({
+  cutGapMs: 150, padMs: 50, zoomSteps: [1, 1.15, 1.25], faceMargin: 1.2, pushInAfterMs: 2000, pushInFactor: 1.08,
+  captionMaxChars: 22, captionMaxWords: 3, headlineMs: 2000, headlineWordFrames: 6, ctaMs: 2500,
+  zoomHitFrames: 6, zoomHitScale: 1.3, flashFrames: 2, musicUnderVoiceDb: -12,
+  sfxVolumeDb: { whoosh: -10, pop: -12, tick: -18 },
+  fillerWords: ["אממ", "אמ", "אהה", "אה", "אהמ", "ממ", "umm", "um", "uh", "uhh", "erm", "hmm"],
+  noisyLogprob: -0.7,
+});
+
+/** A steady face in the upper-middle of the frame for the whole 9 s fixture. */
+export const faceTrackFixture = (): FaceTrack => ({
+  intervalMs: 100,
+  samples: Array.from({ length: 91 }, (_, i) => ({ tMs: i * 100, box: { x: 0.35, y: 0.2, w: 0.3, h: 0.17 } })),
 });

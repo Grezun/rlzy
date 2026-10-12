@@ -25,4 +25,14 @@ describe("timeline sources", () => {
     expect(t.clips.map((c) => c.src)).toEqual(["https://signed/a.png", undefined, "https://already/abs.mp4"]);
     expect(t.audio.musicUrl).toBeUndefined();
   });
+  it("lists and maps sound-effect sources", () => {
+    const withSfx: Timeline = { ...timeline(), sfx: [{ name: "pop1", frame: 3, src: "asset:p.wav", volumeDb: -12 }] };
+    expect(timelineAssetFiles(withSfx).sort()).toEqual(["a.png", "p.wav", "v.wav"]);
+    const mapped = mapTimelineSources(withSfx, (f) => `https://signed/${f}`);
+    expect(mapped.sfx).toEqual([{ name: "pop1", frame: 3, src: "https://signed/p.wav", volumeDb: -12 }]);
+  });
+  it("adds no sfx key to a timeline without sound effects", () => {
+    const mapped = mapTimelineSources(timeline(), (f) => `https://signed/${f}`);
+    expect("sfx" in mapped).toBe(false);
+  });
 });

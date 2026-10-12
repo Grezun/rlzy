@@ -15,3 +15,6 @@ export * from "./footage-form";
 export * from "./schema/footage";
 export * from "./schema/edit-plan";
 export * from "./beats";
+export * from "./footage/style";
+export * from "./footage/face-track";
+export * from "./footage/shots";
