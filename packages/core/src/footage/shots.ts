@@ -51,20 +51,36 @@ function speechSpans(beat: Beat, words: Word[], style: EditStyle): number[][] {
  * Speech cuts (spec §5.2): inside each kept beat, words closer than cutGapMs stay together; every larger gap and every
  * filler is cut. Spans are padded by padMs and snapped to whole source frames so picture and voice cut on the same sample.
  * Padding never overlaps: each span starts no earlier than the previous kept span (in source order, across beats) ends,
- * so no source frame plays twice even when the cold open reorders beats.
+ * so no source frame plays twice even when the cold open reorders beats. Padding never reaches into a cut word (a filler
+ * or a dropped beat's word): it stops at that word's boundary, and frame snapping rounds toward the kept side.
  * The ending adjusts the last shot: a loop ends on its last word; a CTA continues the picture (not the voice) until
  * the next spoken word or the end of the source, at most ctaMs.
  */
 export function planShots(plan: Pick<EditPlan, "beats" | "hook" | "ending" | "source">, words: Word[], style: EditStyle): PlannedShot[] {
   const sourceFrames = Math.floor((plan.source.durationMs * FPS) / 1000);
+  const keptBeats = plan.beats.filter((b) => b.keep);
+  const spansByBeat = new Map(keptBeats.map((b) => [b.id, speechSpans(b, words, style)]));
+  const played = new Set([...spansByBeat.values()].flat(2));
+  /** A word that is never played (a filler or a dropped beat's word): padding and frame snapping must stay out of it. */
+  const cut = (i: number) => (i >= 0 && i < words.length && !played.has(i) ? words[i] : undefined);
+  // First frame at/after a cut word's end, last frame boundary at/before a cut word's start (round toward the kept side).
+  const firstFrameAfter = (ms: number) => Math.ceil((ms * FPS) / 1000 - 1e-6);
+  const lastFrameBefore = (ms: number) => Math.floor((ms * FPS) / 1000 + 1e-6);
+
   const byBeat = new Map<string, PlannedShot[]>();
   let usedUntil = 0;
-  for (const beat of plan.beats.filter((b) => b.keep)) {
-    const shots = speechSpans(beat, words, style).map((span, k): PlannedShot => {
+  for (const beat of keptBeats) {
+    const shots = spansByBeat.get(beat.id)!.map((span, k): PlannedShot => {
       const first = words[span[0]];
       const last = words[span[span.length - 1]];
-      const inFrame = Math.max(usedUntil, msToFrames(Math.max(0, first.startMs - style.padMs)));
-      const outFrame = Math.min(sourceFrames, msToFrames(last.endMs + style.padMs));
+      const before = cut(span[0] - 1);
+      const after = cut(span[span.length - 1] + 1);
+      let inFrame = msToFrames(Math.max(0, first.startMs - style.padMs, before?.endMs ?? 0));
+      if (before) inFrame = Math.max(inFrame, firstFrameAfter(before.endMs));
+      let outFrame = msToFrames(Math.min(last.endMs + style.padMs, after?.startMs ?? Infinity));
+      if (after) outFrame = Math.min(outFrame, lastFrameBefore(after.startMs));
+      inFrame = Math.max(usedUntil, inFrame);
+      outFrame = Math.min(sourceFrames, outFrame);
       const frames = Math.max(1, outFrame - inFrame);
       usedUntil = inFrame + frames;
       return { id: `${beat.id}-${k + 1}`, beatId: beat.id, inFrame, frames, speechFrames: frames, wordIdx: span };
@@ -76,10 +92,10 @@ export function planShots(plan: Pick<EditPlan, "beats" | "hook" | "ending" | "so
   if (!last) return shots;
   const lastWordIdx = last.wordIdx[last.wordIdx.length - 1];
   if (plan.ending.kind === "loop") {
-    last.frames = last.speechFrames = Math.max(1, msToFrames(words[lastWordIdx].endMs) - last.inFrame);
+    last.frames = last.speechFrames = Math.max(1, Math.min(last.frames, msToFrames(words[lastWordIdx].endMs) - last.inFrame));
   } else if (plan.ending.kind === "cta") {
     const next = words[lastWordIdx + 1];
-    const limit = next ? Math.min(sourceFrames, msToFrames(next.startMs - style.padMs)) : sourceFrames;
+    const limit = next ? Math.min(sourceFrames, msToFrames(next.startMs - style.padMs), lastFrameBefore(next.startMs)) : sourceFrames;
     last.frames += Math.max(0, Math.min(msToFrames(style.ctaMs), limit - (last.inFrame + last.frames)));
   }
   return shots;

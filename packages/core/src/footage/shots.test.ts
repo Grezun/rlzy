@@ -67,6 +67,35 @@ describe("planShots", () => {
     const p = plan({ beats, hook: { patternBreak: "none", reason: "" }, ending: { kind: "none" } });
     expect(planShots(p, w, style).map((s) => [s.id, s.inFrame, s.frames])).toEqual([["b1-1", 0, 17], ["b2-1", 17, 15], ["b3-1", 32, 15]]);
   });
+  const sourceRange = (s: { inFrame: number; frames: number }) => [framesToMs(s.inFrame), framesToMs(s.inFrame + s.frames)];
+  const playsInto = (s: { inFrame: number; frames: number }, from: number, to: number) => {
+    const [a, b] = sourceRange(s);
+    return a < to - 1e-6 && b > from + 1e-6;
+  };
+  it("never pads into a filler that abuts the kept words, even when frame snapping would cross it", () => {
+    for (const [fStart, fEnd] of [[500, 900], [520, 880]]) {
+      const w = [{ text: "hello", startMs: 0, endMs: fStart }, { text: "umm", startMs: fStart, endMs: fEnd }, { text: "world.", startMs: fEnd, endMs: 1400 }];
+      const p = plan({ beats: [{ id: "b1", startWordIdx: 0, endWordIdx: 2, keep: true }], hook: { patternBreak: "none", reason: "" }, ending: { kind: "none" } });
+      const shots = planShots(p, w, style);
+      expect(shots.map((s) => s.wordIdx)).toEqual([[0], [2]]);
+      for (const s of shots) expect(playsInto(s, fStart, fEnd)).toBe(false);
+    }
+  });
+  it("never pads into a dropped beat's word that abuts a kept beat (gap under 50 ms)", () => {
+    const w = [{ text: "one.", startMs: 0, endMs: 1000 }, { text: "two.", startMs: 1020, endMs: 1500 }, { text: "three.", startMs: 1530, endMs: 2000 }];
+    const beats = [
+      { id: "b1", startWordIdx: 0, endWordIdx: 0, keep: true },
+      { id: "b2", startWordIdx: 1, endWordIdx: 1, keep: false },
+      { id: "b3", startWordIdx: 2, endWordIdx: 2, keep: true },
+    ];
+    for (const ending of [{ kind: "none" as const }, { kind: "cta" as const, keyword: "AI" }, { kind: "loop" as const }]) {
+      for (const coldOpenBeatId of [undefined, "b3"]) {
+        const shots = planShots(plan({ beats, hook: { patternBreak: "none", reason: "", coldOpenBeatId }, ending }), w, style);
+        expect(shots.map((s) => s.beatId).sort()).toEqual(["b1", "b3"]);
+        for (const s of shots) expect(playsInto(s, 1020, 1500)).toBe(false);
+      }
+    }
+  });
   it("loop: the last shot ends exactly on its last word", () => {
     expect(layout(plan({ ending: { kind: "loop" } })).at(-1)).toEqual(["b3-1", 198, 48, 48]);
   });
