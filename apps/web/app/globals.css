@@ -34,3 +34,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: start; padding: 10px 8px; border-bottom: 1px solid var(--line); }
 @media (max-width: 640px) { main { padding: 16px; } }
+.style-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+.style-card { display: flex; flex-direction: column; gap: 0.4rem; text-decoration: none; color: inherit; }
+.style-card.disabled { opacity: 0.55; cursor: not-allowed; }

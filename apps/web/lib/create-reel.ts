@@ -1,7 +1,7 @@
 import type { PlanForm } from "@reel/core";
 
 export interface CreateReelDeps {
-  insertProject(input: { title: string; language: "he" | "en" }): Promise<{ id: string } | { error: string }>;
+  insertProject(input: { title: string; language: "he" | "en"; styleId?: string }): Promise<{ id: string } | { error: string }>;
   insertPlanJob(projectId: string, payload: PlanForm): Promise<{ ok: true } | { error: string; code?: string }>;
   markProjectFailed(projectId: string): Promise<void>;
 }
@@ -9,9 +9,10 @@ export interface CreateReelDeps {
 export async function createReelFromForm(
   deps: CreateReelDeps,
   form: PlanForm,
+  opts?: { title?: string; styleId?: string },
 ): Promise<{ ok: true; projectId: string } | { ok: false; errors: string[] }> {
-  const title = Array.from(form.brief).slice(0, 80).join("");
-  const project = await deps.insertProject({ title, language: form.language });
+  const title = opts?.title ?? Array.from(form.brief).slice(0, 80).join("");
+  const project = await deps.insertProject({ title, language: form.language, ...(opts?.styleId ? { styleId: opts.styleId } : {}) });
   if ("error" in project) return { ok: false, errors: [`Couldn't create the reel: ${project.error}`] };
 
   const job = await deps.insertPlanJob(project.id, form);

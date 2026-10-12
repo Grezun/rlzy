@@ -11,6 +11,7 @@
   "dependencies": {
     "@reel/core": "*",
     "@reel/db": "*",
+    "@reel/styles": "*",
     "@reel/video": "*",
     "@remotion/player": "4.0.531",
     "@supabase/ssr": "0.12.7",
