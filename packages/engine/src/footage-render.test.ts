@@ -1,4 +1,4 @@
-import { averageLuma, makeTestVideo } from "@reel/media";
+import { averageLuma, makeTestVideo, runFfmpeg } from "@reel/media";
 import { renderReelStill } from "@reel/video/render";
 import { sampleFootageTimeline } from "@reel/video/sample-footage";
 import { mkdir, mkdtemp, stat } from "node:fs/promises";
@@ -21,6 +21,10 @@ describe("footage render (speaker shot, flash)", () => {
       expect(await averageLuma(join(out, "footage-flash.png"))).toBeGreaterThan(200);
       expect(await averageLuma(join(out, "footage-speaker.png"))).toBeLessThan(200);
       expect((await stat(join(out, "footage-speaker.png"))).size).toBeGreaterThan(50_000);
+      // The zoomed video covers the whole frame: the top 1 % rows are not a black band.
+      const top = join(dir, "speaker-top.png");
+      await runFfmpeg(["-i", join(out, "footage-speaker.png"), "-vf", "crop=iw:ih*0.01:0:0", top]);
+      expect(await averageLuma(top)).toBeGreaterThan(40);
     } finally {
       await server.close();
     }

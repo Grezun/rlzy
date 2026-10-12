@@ -3,16 +3,36 @@ import { ctaLines, popIn, revealedCount, speakerTransform } from "./motion";
 
 describe("speakerTransform", () => {
   const punch = { cx: 0.5, cy: 0.4, scaleFrom: 1, scaleTo: 1.3, punchFrames: 6 };
-  it("punches in over punchFrames and holds, moving the face centre to the frame centre", () => {
-    expect(speakerTransform(punch, 0, 45)).toBe("scale(1.0000) translate(0.000%, 10.000%)");
-    expect(speakerTransform(punch, 3, 45)).toBe("scale(1.1500) translate(0.000%, 10.000%)");
+  it("punches in over punchFrames and holds, moving the face centre towards the frame centre", () => {
+    // At scale 1 there is no room to move; the centre is clamped per frame so no frame edge shows.
+    expect(speakerTransform(punch, 0, 45)).toBe("scale(1.0000) translate(0.000%, 0.000%)");
+    expect(speakerTransform(punch, 3, 45)).toBe("scale(1.1500) translate(0.000%, 6.522%)");
     expect(speakerTransform(punch, 6, 45)).toBe("scale(1.3000) translate(0.000%, 10.000%)");
     expect(speakerTransform(punch, 40, 45)).toBe("scale(1.3000) translate(0.000%, 10.000%)");
   });
   it("pushes in linearly across the clip and resets on the next clip", () => {
     const push = { cx: 0.6, cy: 0.5, scaleFrom: 1, scaleTo: 1.08 };
-    expect(speakerTransform(push, 0, 61)).toBe("scale(1.0000) translate(-10.000%, 0.000%)");
-    expect(speakerTransform(push, 60, 61)).toBe("scale(1.0800) translate(-10.000%, 0.000%)");
+    expect(speakerTransform(push, 0, 61)).toBe("scale(1.0000) translate(0.000%, 0.000%)");
+    expect(speakerTransform(push, 60, 61)).toBe("scale(1.0800) translate(-3.704%, 0.000%)");
+  });
+  it("never shows a frame edge: |translate| ≤ (1 − 1/s) / 2 on both axes, every frame, any crop", () => {
+    const grid = [0, 0.1, 0.25, 0.4, 0.5, 0.6, 0.75, 0.9, 1];
+    const scales = [1, 1.08, 1.15, 1.25, 1.3];
+    for (const cx of grid)
+      for (const cy of grid)
+        for (const scaleFrom of scales)
+          for (const scaleTo of scales.filter((s) => s >= scaleFrom))
+            for (const punchFrames of [undefined, 6]) {
+              const crop = { cx, cy, scaleFrom, scaleTo, ...(punchFrames ? { punchFrames } : {}) };
+              for (let frame = 0; frame < 30; frame++) {
+                const m = speakerTransform(crop, frame, 30).match(/^scale\(([\d.]+)\) translate\((-?[\d.]+)%, (-?[\d.]+)%\)$/);
+                expect(m).not.toBeNull();
+                const [s, tx, ty] = m!.slice(1).map(Number);
+                const limit = ((1 - 1 / s) / 2) * 100 + 0.005; // the 4-decimal scale and 3-decimal translate are rounded (< 0.1 px)
+                expect(Math.abs(tx)).toBeLessThanOrEqual(limit);
+                expect(Math.abs(ty)).toBeLessThanOrEqual(limit);
+              }
+            }
   });
 });
 

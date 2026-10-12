@@ -9,10 +9,16 @@ export function speakerScale(crop: TimelineCrop, frame: number, durationInFrames
   return crop.scaleFrom + (crop.scaleTo - crop.scaleFrom) * clamp01(frame / span);
 }
 
-/** CSS transform (applied right to left): move (cx, cy) to the centre, then zoom about the centre. */
+/**
+ * CSS transform (applied right to left): move (cx, cy) towards the centre, then zoom about the centre.
+ * The centre is clamped per frame to [0.5/s, 1 − 0.5/s] for this frame's scale s, so no frame edge ever shows,
+ * even while a push-in or zoom hit is still at its smaller starting scale.
+ */
 export function speakerTransform(crop: TimelineCrop, frame: number, durationInFrames: number): string {
-  const s = speakerScale(crop, frame, durationInFrames);
-  return `scale(${s.toFixed(4)}) translate(${((0.5 - crop.cx) * 100).toFixed(3)}%, ${((0.5 - crop.cy) * 100).toFixed(3)}%)`;
+  const s = Math.max(1, speakerScale(crop, frame, durationInFrames));
+  const half = 0.5 / s;
+  const clamp = (v: number) => Math.min(1 - half, Math.max(half, v));
+  return `scale(${s.toFixed(4)}) translate(${((0.5 - clamp(crop.cx)) * 100).toFixed(3)}%, ${((0.5 - clamp(crop.cy)) * 100).toFixed(3)}%)`;
 }
 
 export const popIn = (frame: number, frames: number, from: number) => from + (1 - from) * easeOutCubic(clamp01(frame / frames));
