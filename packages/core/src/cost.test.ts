@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertWithinCap, ceilToCent, DEFAULT_COST_TABLE, cutawayCost, estimateCost, estimateFootageCost, estimateReelSeconds, estimateSceneSeconds, MUSIC_MIN_MS, musicBillSeconds, videoBillSeconds } from "./cost";
+import { assertWithinCap, backgroundCost, ceilToCent, DEFAULT_COST_TABLE, cutawayCost, estimateCost, estimateFootageCost, estimateReelSeconds, estimateSceneSeconds, MUSIC_MIN_MS, musicBillSeconds, musicCost, videoBillSeconds } from "./cost";
 import { SpendCapError, UnknownCostModelError } from "./errors";
 import { parseStoryboard } from "./schema/storyboard";
 import { validStoryboard } from "./testing/fixtures";
@@ -53,6 +53,17 @@ describe("footage cost", () => {
     expect(estimateFootageCost({ music: { kind: "ai", prompt: "x" } }, 7.3)).toBeCloseTo(0.08, 9);
     expect(estimateFootageCost({ music: { kind: "none" } }, 7.3)).toBe(0);
     expect(estimateFootageCost({ music: { kind: "library", assetId: "6f1c2b9e-3a4d-4e5f-8a7b-1c2d3e4f5a6b" } }, 7.3)).toBe(0);
+  });
+  it("prices one Higgsfield still per AI background section and nothing for the original background", () => {
+    const scene = { mode: "replace" as const, sections: [{ fromBeatId: "b1", source: { kind: "ai" as const, prompt: "office" } }] };
+    expect(backgroundCost({ mode: "original" })).toBe(0);
+    expect(backgroundCost(undefined)).toBe(0);
+    expect(backgroundCost(scene)).toBeCloseTo(0.04, 9);
+    expect(backgroundCost({ mode: "replace", sections: [{ fromBeatId: "b1", source: { kind: "brand", assetId: "x" } }] })).toBe(0);
+    expect(estimateFootageCost({ music: { kind: "ai", prompt: "x" }, background: scene }, 7.3)).toBeCloseTo(0.12, 9);
+    // Generation reserves music on its own price: never the whole estimate, or the background would find nothing left.
+    expect(musicCost({ music: { kind: "ai", prompt: "x" } }, 7.3)).toBeCloseTo(0.08, 9);
+    expect(musicCost({ music: { kind: "none" } }, 7.3)).toBe(0);
   });
 
   it("throws UnknownCostModelError for AI music when the table has no price for it", () => {

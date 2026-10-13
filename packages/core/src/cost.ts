@@ -95,10 +95,26 @@ export function cutawayCost(source: CutawaySource, durationMs: number, table: Co
   return source.media === "video" ? image + videoBillSeconds(durationMs / 1000) * unitPrice(table, DEFAULT_MODELS.video, "perSecond") : image;
 }
 
-/** Generation spend of an approved footage plan, in USD: AI music fitted to the reel plus every placed AI cutaway. */
-export function estimateFootageCost(plan: Pick<EditPlan, "music">, durationSec: number, table: CostTable = DEFAULT_COST_TABLE, placed: PlacedCutaway[] = []): number {
-  const music = plan.music.kind === "ai" ? musicBillSeconds(durationSec) * unitPrice(table, "elevenlabs/music", "perSecond") : 0;
-  return music + placed.reduce((sum, c) => sum + cutawayCost(c.source, (c.durationInFrames * 1000) / 30, table), 0);
+/** AI music fitted to the reel, in USD (generation reserves exactly this before composing). */
+export function musicCost(plan: Pick<EditPlan, "music">, durationSec: number, table: CostTable = DEFAULT_COST_TABLE): number {
+  return plan.music.kind === "ai" ? musicBillSeconds(durationSec) * unitPrice(table, "elevenlabs/music", "perSecond") : 0;
+}
+
+/** Plan 3: one Higgsfield still per AI background section, on the B-roll still's model and price. */
+export function backgroundCost(background: EditPlan["background"] | undefined, table: CostTable = DEFAULT_COST_TABLE): number {
+  if (!background || background.mode !== "replace") return 0;
+  const ai = background.sections.filter((s) => s.source.kind === "ai").length;
+  return ai ? ai * unitPrice(table, DEFAULT_MODELS.image, "perImage") : 0;
+}
+
+/** Generation spend of an approved footage plan, in USD: AI music, the AI background and every placed AI cutaway. */
+export function estimateFootageCost(
+  plan: Pick<EditPlan, "music"> & Partial<Pick<EditPlan, "background">>,
+  durationSec: number,
+  table: CostTable = DEFAULT_COST_TABLE,
+  placed: PlacedCutaway[] = [],
+): number {
+  return musicCost(plan, durationSec, table) + backgroundCost(plan.background, table) + placed.reduce((sum, c) => sum + cutawayCost(c.source, (c.durationInFrames * 1000) / 30, table), 0);
 }
 
 export function assertWithinCap(estimate: CostEstimate, capUsd: number): void {

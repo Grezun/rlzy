@@ -86,5 +86,20 @@ export const EditStyleSchema = z.object({
     sideWidthPct: z.number().min(0).max(100),
     sidePadPct: z.number().min(0).max(100),
   }),
+  /**
+   * Plan 3 backdrop behind the cut-out speaker. The still covers the frame x zoom, so the sine drift never shows an
+   * edge. It is blurred, desaturated and dimmed, so the sharp speaker and the white captions stand out. The matte edge is
+   * feathered by featherPx.
+   */
+  background: z.object({
+    zoom: z.number().min(1).max(1.5),
+    driftPct: z.number().min(0).max(10),
+    driftPeriodSec: z.number().positive(),
+    driftPeriodYSec: z.number().positive(),
+    blurSigma: z.number().min(0).max(30),
+    dim: z.number().min(0).max(0.9),
+    saturation: z.number().min(0).max(2),
+    featherPx: z.number().min(0).max(20),
+  }),
 });
 export type EditStyle = z.infer<typeof EditStyleSchema>;

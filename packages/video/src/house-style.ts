@@ -54,6 +54,9 @@ export const houseStyle = {
     // 53 %: 48 % for 16 characters at 52 px, plus the 19 % spring overshoot about the badge centre.
     // Captions sit below the face, so a badge above or beside the face never meets them.
     callouts: { durationMs: 1600, minMs: 800, clearFrames: 6, topSafePct: 9, gapPct: 2, heightPct: 7, noFaceTopPct: 20, sideWidthPct: 53, sidePadPct: 4 },
+    // Plan 3: a soft, slightly dark scene so the sharp speaker and the white captions win; a slow sway instead of a frozen photo.
+    // 2.5 % drift fits inside the 1.08 cover margin (4 % each side). 3 px feather (spec §4.4). The y sway is 1.6x slower than x.
+    background: { zoom: 1.08, driftPct: 2.5, driftPeriodSec: 24, driftPeriodYSec: 38.4, blurSigma: 5, dim: 0.1, saturation: 0.9, featherPx: 3 },
   } satisfies EditStyle,
   captions: {
     topPct: 45, // only when a page has no position

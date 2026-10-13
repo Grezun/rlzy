@@ -63,7 +63,7 @@ describe("checkEditPlan", () => {
   it("refuses plan-2/3 fields a crafted client might send", () => {
     const r = checkEditPlan({ ...plan(), background: { mode: "replace", sections: [{ fromBeatId: "b1", source: { kind: "ai", prompt: "x" } }] } });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.errors.join(" ")).toMatch(/Background replacement arrives in a later update/);
+    if (!r.ok) expect(r.errors.join(" ")).toMatch(/Background replacement needs the cut-out of you/);
   });
 });
 
