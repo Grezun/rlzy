@@ -1,4 +1,4 @@
-import { cutawayCost, planCutaways, type Cutaway, type EditPlan, type EditStyle, type Word } from "@reel/core";
+import { cutawayCost, planCallouts, planCutaways, type Cutaway, type EditPlan, type EditStyle, type Word } from "@reel/core";
 
 export type CutawayChoice = "none" | "ai_broll:image" | "ai_broll:video" | "ai_self:image" | "ai_self:video" | "upload" | "diagram";
 
@@ -39,10 +39,10 @@ export const cutawayPriceLabel = (c: Cutaway) => {
   return usd === 0 ? "free" : `$${usd.toFixed(2)}`;
 };
 
-/** Spec §7: the compiler's trims and drops, shown before approval. An invalid plan has none to show yet. */
+/** Spec §7: the compiler's cutaway and callout trims and drops, shown before approval. An invalid plan has none to show yet. */
 export function placementWarnings(plan: EditPlan, words: Word[], style: EditStyle): string[] {
   try {
-    return planCutaways(plan, words, style).warnings;
+    return [...planCutaways(plan, words, style).warnings, ...planCallouts(plan, words, style).warnings];
   } catch {
     return [];
   }

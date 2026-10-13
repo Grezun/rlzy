@@ -4,6 +4,7 @@ export type PlanAction =
   | { type: "toggleKeep"; beatId: string }
   | { type: "setEmphasis"; beatId: string; wordIdx: number | null }
   | { type: "setEmoji"; beatId: string; emoji: string }
+  | { type: "setCallout"; beatId: string; text: string }
   | { type: "setColdOpen"; beatId: string | null }
   | { type: "setHeadline"; small: string; big: string }
   | { type: "setPatternBreak"; value: "zoom_hit" | "flash" | "broll" | "none" }
@@ -33,6 +34,8 @@ export function editPlan(plan: EditPlan, a: PlanAction): EditPlan {
         a.wordIdx !== null && a.wordIdx >= b.startWordIdx && a.wordIdx <= b.endWordIdx ? { ...b, emphasisWordIdx: a.wordIdx } : without(b, "emphasisWordIdx"));
     case "setEmoji":
       return withBeat(plan, a.beatId, (b) => (a.emoji.trim() ? { ...b, emoji: a.emoji } : without(b, "emoji")));
+    case "setCallout":
+      return withBeat(plan, a.beatId, (b) => (a.text === "" ? without(b, "callout") : { ...b, callout: { text: a.text } }));
     case "setColdOpen":
       return { ...plan, hook: a.beatId ? { ...plan.hook, coldOpenBeatId: a.beatId } : without(plan.hook, "coldOpenBeatId") };
     case "setHeadline":
@@ -70,7 +73,8 @@ export function normalizePlanForSave(plan: EditPlan): EditPlan {
     hook: { ...hook, reason: plan.hook.reason.trim() },
     beats: plan.beats.map((b) => {
       const e = b.emoji !== undefined && !b.emoji.trim() ? without(b, "emoji") : b;
-      return e.cutaway ? { ...e, cutaway: trimCutaway(e.cutaway) } : e;
+      const c = e.callout ? (e.callout.text.trim() ? { ...e, callout: { text: e.callout.text.trim() } } : without(e, "callout")) : e;
+      return c.cutaway ? { ...c, cutaway: trimCutaway(c.cutaway) } : c;
     }),
   };
 }

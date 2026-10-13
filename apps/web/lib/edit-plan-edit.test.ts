@@ -7,6 +7,13 @@ import { checkEditPlan, describeFootageLength, editPlan, normalizePlanForSave } 
 const plan = () => parseEditPlan(validEditPlan());
 
 describe("editPlan", () => {
+  it("sets, trims and removes a callout", () => {
+    const p = editPlan(plan(), { type: "setCallout", beatId: "b2", text: " 1/5 " });
+    expect(p.beats[1].callout).toEqual({ text: " 1/5 " });
+    expect(normalizePlanForSave(p).beats[1].callout).toEqual({ text: "1/5" });
+    expect(normalizePlanForSave(editPlan(p, { type: "setCallout", beatId: "b2", text: "   " })).beats[1].callout).toBeUndefined();
+    expect(editPlan(p, { type: "setCallout", beatId: "b2", text: "" }).beats[1].callout).toBeUndefined();
+  });
   it("toggles keep and clears a cold open on a dropped beat", () => {
     const withCold = editPlan(plan(), { type: "setColdOpen", beatId: "b2" });
     const dropped = editPlan(withCold, { type: "toggleKeep", beatId: "b2" });
@@ -41,6 +48,11 @@ describe("editPlan", () => {
 });
 
 describe("checkEditPlan", () => {
+  it("refuses a callout of more than 3 words with a plain message", () => {
+    const r = checkEditPlan(editPlan(plan(), { type: "setCallout", beatId: "b2", text: "a b c d" }));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join(" ")).toMatch(/A callout is a number or 1–3 words/);
+  });
   it("refuses unticking every beat with a plain message", () => {
     let p = plan();
     for (const id of ["b1", "b2", "b3"]) p = editPlan(p, { type: "toggleKeep", beatId: id });

@@ -1,5 +1,5 @@
 "use client";
-import { EmptyEditError, footageDurationMs, withFootageEstimate, type EditPlan, type Word } from "@reel/core";
+import { CALLOUT_MAX_CHARS, EmptyEditError, footageDurationMs, withFootageEstimate, type EditPlan, type Word } from "@reel/core";
 import { houseStyle } from "@reel/video/house-style";
 import { useRouter } from "next/navigation";
 import { useMemo, useReducer, useState, useTransition } from "react";
@@ -16,7 +16,7 @@ type Result = { ok: true } | { ok: false; errors: string[] };
 const PATTERN_BREAKS = [["zoom_hit", "Zoom hit"], ["flash", "Flash"], ["broll", "B-roll (first cutaway)"], ["none", "None"]] as const;
 const SFX = [["off", "Off"], ["subtle", "Subtle"], ["lively", "Lively"]] as const;
 const ENDINGS = [["cta", "CTA"], ["loop", "Loop"], ["none", "None"]] as const;
-const RED = "#E5262A";
+const RED = "#FF3B30"; // iOS red, as in the reel
 const REPLAN_MAX = 500;
 
 type Props = {
@@ -102,7 +102,7 @@ export function FootagePlanEditor({ projectId, storyboardId, initial, words, lib
       {plan.warnings.length > 0 && <ul className="warn">{plan.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
       {placement.length > 0 && (
         <div className="warn">
-          <strong>Cutaway placement:</strong>
+          <strong>Cutaways and callouts:</strong>
           <ul>{placement.map((w, i) => <li key={i}>{w}</li>)}</ul>
         </div>
       )}
@@ -170,6 +170,18 @@ export function FootagePlanEditor({ projectId, storyboardId, initial, words, lib
                 <label>Emoji
                   <input maxLength={8} value={beat.emoji ?? ""} onChange={(e) => dispatch({ type: "setEmoji", beatId: beat.id, emoji: e.target.value })} style={{ width: 80 }} />
                 </label>
+                <label>Callout
+                  <input
+                    dir="auto"
+                    maxLength={CALLOUT_MAX_CHARS}
+                    value={beat.callout?.text ?? ""}
+                    placeholder="e.g. 1/5"
+                    title="A number or 1–3 words that pops up above you"
+                    onChange={(e) => dispatch({ type: "setCallout", beatId: beat.id, text: e.target.value })}
+                    style={{ width: 160 }}
+                  />
+                </label>
+                {beat.callout && <button type="button" onClick={() => dispatch({ type: "setCallout", beatId: beat.id, text: "" })}>Remove callout</button>}
                 {!beat.keep && beat.dropReason && <span className="muted" dir="auto">Dropped: {beat.dropReason}</span>}
               </div>
               <CutawayEditor plan={plan} cutaway={beat.cutaway} onChange={(c) => dispatch({ type: "setCutaway", beatId: beat.id, cutaway: c })} />

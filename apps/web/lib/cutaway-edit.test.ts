@@ -7,6 +7,10 @@ import { cutawayChoice, cutawayLengthMs, cutawayPriceLabel, defaultCutaway, plac
 const plan = () => parseEditPlan({ ...validEditPlan(), source: { ...validEditPlan().source, extras: fixtureExtras() } });
 
 describe("cutaway editing helpers", () => {
+  it("adds callout warnings to the placement list", () => {
+    const p = parseEditPlan({ ...plan(), beats: plan().beats.map((b) => (b.id === "b3" ? { ...b, callout: { text: "AI" } } : b)) });
+    expect(placementWarnings(p, footageTranscript().words, houseStyle.edit)).toEqual(["The callout in b3 was dropped: the hook headline, a cutaway or the CTA card covers its beat."]);
+  });
   it("round-trips the type picker and keeps the prompt and timing when switching AI kinds", () => {
     const c = defaultCutaway("ai_broll:video", plan())!;
     expect(c).toEqual({ source: { kind: "ai_broll", prompt: "", media: "video" }, layout: "full", atMs: 0, durationMs: 1500 });
