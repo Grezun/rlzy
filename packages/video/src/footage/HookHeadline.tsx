@@ -47,13 +47,16 @@ const Headline: React.FC<{ small: string; big: string; topPct: number; direction
   );
 };
 
+/** The headline's top edge: placed off the face by compileFootage, or the house default for older timelines. */
+export const headlineTop = (headline: { topPct?: number }) => headline.topPct ?? h.topPct;
+
 export const HookHeadline: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
   const headline = timeline.hook?.headline;
   if (!headline) return null;
   return (
     <AbsoluteFill>
       <Sequence from={headline.fromFrame} durationInFrames={headline.durationInFrames} layout="none">
-        <Headline small={headline.small} big={headline.big} topPct={headline.topPct ?? h.topPct} direction={timeline.direction} />
+        <Headline small={headline.small} big={headline.big} topPct={headlineTop(headline)} direction={timeline.direction} />
       </Sequence>
     </AbsoluteFill>
   );

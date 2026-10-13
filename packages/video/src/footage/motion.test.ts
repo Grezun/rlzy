@@ -207,3 +207,11 @@ describe("callouts and the progress bar", () => {
     expect(progressShare(299, 300)).toBe(1);
   });
 });
+
+describe("headlineTop", () => {
+  it("uses the timeline's topPct, or the house default for timelines made before it existed", async () => {
+    const { headlineTop } = await import("./HookHeadline");
+    expect(headlineTop({ topPct: 13 })).toBe(13);
+    expect(headlineTop({})).toBe(58);
+  });
+});

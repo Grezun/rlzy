@@ -4,7 +4,7 @@ import type { EditPlan } from "../schema/edit-plan";
 import type { FaceBox, FaceTrack, Transcript } from "../schema/footage";
 import { TimelineSchema, type SfxName, type Timeline, type TimelineClip, type TimelineCrop, type TimelineCutaway, type Word } from "../schema/timeline";
 import { calloutSpot, placeCallouts } from "./callouts";
-import { headlineSpot, placeCaptionPages, screenChinY, screenFaceRect, type FaceSpan, type ScreenRect } from "./caption-place";
+import { headlineSpot, placeCaptionPages, screenChinY, screenFaceRect, splitFaceRect, type FaceSpan, type ScreenRect } from "./caption-place";
 import { addSnaps, applyBreaks, pickBreaks } from "./breaks";
 import { pageWords, type ReelWord } from "./captions";
 import { cutawayFit, cutawayTransitions, placeCutaways, type PlacedCutaway } from "./cutaways";
@@ -148,7 +148,7 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
   const placedPages = pages.map((p, i) => ({ ...p, topPct: tops[i] }));
 
   const notes: string[] = [];
-  /** The face's on-screen box over [from, end): every clip there, over each clip's zoom range (punch-ins included). */
+  /** For callouts: the face's on-screen box over [from, end), every clip there over its whole zoom range (punch-ins included). */
   const faceOver = (from: number, end: number): ScreenRect | null => {
     const rects = finalClips
       .flatMap((clip, i) => (clip.fromFrame < end && clip.fromFrame + clip.durationInFrames > from ? [screenFaceRect(finalFaces[i], clip.crop!)] : []))
@@ -159,8 +159,8 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
   };
   const headline = plan.hook.headline;
   const headlineFrames = Math.min(total, msToFrames(style.headlineMs));
-  const headlineAt = headline ? headlineSpot(faceOver(0, headlineFrames), splitWords(headline.small).length > 0, style.headline) : null;
-  if (headlineAt && !headlineAt.clear) notes.push("Your face fills the frame in the hook, so the headline sits at the top, over your forehead, to keep your mouth clear.");
+  const headlineAt = headline ? headlineSpot(headlineFaceRect(finalClips, finalFaces, shown, headlineFrames), splitWords(headline.small).length > 0, style.headline) : null;
+  if (headlineAt && !headlineAt.clear) notes.push("Your face fills the frame in the hook, so the headline sits at the top of the frame, over the top of your face, to keep your mouth clear.");
   const callouts = calloutPlan.placed.flatMap((c) => {
     const spot = calloutSpot(faceOver(c.fromFrame, c.fromFrame + c.durationInFrames), style.callouts);
     if (!spot) {
@@ -235,6 +235,33 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
     progressBar: true,
   });
   return { timeline, voiceSegments, durationMs: framesToMs(total), notes };
+}
+
+/**
+ * The face's on-screen box while the headline shows (frames 0 to end): only the frames the speaker is visible (not
+ * under a full cutaway), each clip at the zoom it reaches in those frames (pieceCrop, as the renderer interpolates),
+ * split clips as shown in the bottom half. Null when no face shows.
+ */
+export function headlineFaceRect(
+  clips: TimelineClip[], faces: (FaceBox | null)[], cutaways: { fromFrame: number; durationInFrames: number; layout: "full" | "split" }[], end: number,
+): ScreenRect | null {
+  const covers = cutaways.filter((c) => c.layout === "full").map((c): [number, number] => [c.fromFrame, c.fromFrame + c.durationInFrames]);
+  const rects: ScreenRect[] = [];
+  clips.forEach((clip, i) => {
+    const face = faces[i];
+    if (!face || !clip.crop) return;
+    let visible: [number, number][] = [[clip.fromFrame, Math.min(end, clip.fromFrame + clip.durationInFrames)]];
+    for (const [a, b] of covers) {
+      visible = visible.flatMap(([s, e]): [number, number][] => (b <= s || a >= e ? [[s, e]] : [...(a > s ? [[s, a] as [number, number]] : []), ...(b < e ? [[b, e] as [number, number]] : [])]));
+    }
+    for (const [s, e] of visible) {
+      if (e <= s) continue;
+      const r = clip.layout === "split" ? splitFaceRect(face, clip.crop.cy) : screenFaceRect(face, pieceCrop(clip.crop, s - clip.fromFrame, e - s, clip.durationInFrames));
+      if (r) rects.push(r);
+    }
+  });
+  if (!rects.length) return null;
+  return { top: Math.min(...rects.map((r) => r.top)), bottom: Math.max(...rects.map((r) => r.bottom)), left: Math.min(...rects.map((r) => r.left)), right: Math.max(...rects.map((r) => r.right)) };
 }
 
 function cutawayMedia(c: PlacedCutaway, plan: EditPlan, assets: FootageAssets, style: EditStyle): TimelineCutaway["media"] {

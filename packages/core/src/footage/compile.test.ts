@@ -5,7 +5,7 @@ import { parseEditPlan, type EditPlan } from "../schema/edit-plan";
 import { EXTRA_IMG, faceTrackFixture, fixtureExtras, footageTranscript, lowFaceTrackFixture, testEditStyle, validEditPlan } from "../testing/fixtures";
 import { moveCoveredCallouts, planCallouts } from "./callouts";
 import { cutawayBudget, planCutaways } from "./cutaways";
-import { compileFootage, EmptyEditError, footageDurationMs, withFootageEstimate, type FootageAssets } from "./compile";
+import { compileFootage, EmptyEditError, footageDurationMs, headlineFaceRect, withFootageEstimate, type FootageAssets } from "./compile";
 import { framesToMs, planShots } from "./shots";
 
 const style = testEditStyle();
@@ -334,7 +334,48 @@ describe("hook headline placement", () => {
     const huge = { intervalMs: 100, samples: Array.from({ length: 91 }, (_, i) => ({ tMs: i * 100, box: { x: 0.1, y: 0.12, w: 0.8, h: 0.62 } })) };
     const { timeline, notes } = compile(plan({ hook: { ...validEditPlan().hook, patternBreak: "none" } }), huge);
     expect(timeline.hook!.headline!.topPct).toBe(9);
-    expect(notes).toEqual(["Your face fills the frame in the hook, so the headline sits at the top, over your forehead, to keep your mouth clear."]);
+    expect(notes).toEqual(["Your face fills the frame in the hook, so the headline sits at the top of the frame, over the top of your face, to keep your mouth clear."]);
+  });
+
+  it("leaves the hook without a headline when the plan has none, with no note", () => {
+    const { timeline, notes } = compile(plan({ hook: { patternBreak: "zoom_hit", reason: "" } }), closeUp);
+    expect(timeline.hook).toEqual({ patternBreak: "zoom_hit" });
+    expect(notes).toEqual([]);
+  });
+
+  it("still parses a timeline whose headline has no topPct (rendered before this field)", () => {
+    const { timeline } = compile();
+    const { topPct: _old, ...headline } = timeline.hook!.headline!;
+    expect(TimelineSchema.safeParse({ ...timeline, hook: { ...timeline.hook, headline } }).success).toBe(true);
+  });
+});
+
+describe("headlineFaceRect (the face the headline must clear)", () => {
+  const face = { x: 0.3, y: 0.3, w: 0.4, h: 0.3 };
+  const speaker = (fromFrame: number, durationInFrames: number, crop: object, layout?: "split") =>
+    ({ sceneId: "s", kind: "speaker", src: "v", fromFrame, durationInFrames, motion: "none", transitionIn: "cut", crop, ...(layout ? { layout } : {}) }) as never;
+
+  it("uses only the part of a long push-in that plays under the headline", () => {
+    // 1 → 1.3 over 300 frames; frames 0–59 reach only 1 + 0.3 × 59/299 ≈ 1.0592 (centre clamped to 0.472), so the chin
+    // shows at 0.5 + (0.6 − 0.472) × 1.0592 ≈ 63.6 %, not the whole clip's 0.5 + 0.15 × 1.3 = 69.5 %.
+    const r = headlineFaceRect([speaker(0, 300, { cx: 0.5, cy: 0.45, scaleFrom: 1, scaleTo: 1.3 })], [face], [], 60)!;
+    expect(r.top).toBeCloseTo(0.3, 4);
+    expect(r.bottom).toBeCloseTo(0.6355, 3);
+  });
+
+  it("skips frames hidden behind a full cutaway, and reads a split clip's face in the bottom half", () => {
+    const clips = [speaker(0, 30, { cx: 0.5, cy: 0.45, scaleFrom: 2, scaleTo: 2 }), speaker(30, 60, { cx: 0.5, cy: 0.45, scaleFrom: 1, scaleTo: 1 })];
+    // The 2× clip (0–30) is under a full cutaway: only the 1× clip counts.
+    expect(headlineFaceRect(clips, [face, face], [{ fromFrame: 0, durationInFrames: 30, layout: "full" }], 60)).toEqual({ top: 0.3, bottom: 0.6, left: 0.3, right: 0.7 });
+    // A window entirely under a full cutaway shows no face.
+    expect(headlineFaceRect(clips, [face, face], [{ fromFrame: 0, durationInFrames: 60, layout: "full" }], 60)).toBeNull();
+    // Split: the source is shown 1:1 in the bottom half, shifted by 0.25 − cy = −0.2: face 30–60 % → 60–90 %.
+    expect(headlineFaceRect([speaker(0, 60, { cx: 0.5, cy: 0.45, scaleFrom: 1, scaleTo: 1 }, "split")], [face], [], 60)).toEqual({ top: 0.6, bottom: 0.9, left: 0.3, right: 0.7 });
+  });
+
+  it("is the same as the whole-clip box when the clip ends inside the window and nothing covers it", () => {
+    const crop = { cx: 0.5, cy: 0.45, scaleFrom: 1, scaleTo: 1.3, punchFrames: 6 };
+    expect(headlineFaceRect([speaker(0, 26, crop)], [face], [], 60)).toEqual({ top: 0.3, bottom: 0.695, left: 0.24, right: 0.76 });
   });
 });
 

@@ -85,6 +85,7 @@ export const testEditStyle = (): EditStyle => ({
   fillerWords: ["אממ", "אמ", "אהה", "אה", "אהמ", "ממ", "umm", "um", "uh", "uhh", "erm", "hmm"],
   noisyLogprob: -0.7,
   captionPlacement: { minTopPct: 55, maxTopPct: 72, chinGapPct: 3, pillHalfPct: 2.8, holdPct: 3, noFaceTopPct: 60, seamTopPct: 50 },
+  // Same numbers as houseStyle.edit.headline (packages/video/src/house-style.ts), measured on the rendered headline.
   headline: { topPct: 58, heightPct: 15, bigOnlyHeightPct: 10.5, gapPct: 2, topSafePct: 9, bottomPct: 75 },
   breaks: { everyMs: 10_000, minMs: 8000, maxMs: 12_000, minShotFrames: 12, kinds: ["zoom_blur", "zoom_hit", "zoom_blur", "flash"], hitFactor: 1.2, zoomBlurFrames: 6 },
   snapFrames: 4,
