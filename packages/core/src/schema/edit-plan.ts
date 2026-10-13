@@ -1,6 +1,6 @@
 import * as z from "zod";
 import { FootageTargetSchema } from "../footage-form";
-import { FootageSourceSchema } from "./footage";
+import { AssetHashSchema, FootageSourceSchema } from "./footage";
 import { LanguageSchema } from "./storyboard";
 
 export const BEAT_ID_RE = /^b[0-9]{1,3}$/;
@@ -11,18 +11,23 @@ export type MusicMood = z.infer<typeof MusicMoodSchema>;
 export const PatternBreakSchema = z.enum(["zoom_hit", "flash", "broll", "none"]);
 
 const Prompt = z.string().trim().min(1).max(1500);
-/** Plan 2. Present in the shape so later plans extend it; parseEditPlan rejects it in plan 1. */
-const CutawaySchema = z.object({
-  source: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("ai_broll"), prompt: Prompt }),
-    z.object({ kind: z.literal("ai_self"), prompt: Prompt }),
-    z.object({ kind: z.literal("upload"), assetId: z.string().min(1) }),
-    z.object({ kind: z.literal("diagram"), template: z.enum(["compare", "list", "flow"]), items: z.array(z.string().trim().min(1).max(40)).min(2).max(4) }),
-  ]),
+export const DiagramTemplateSchema = z.enum(["compare", "list", "flow"]);
+export const CutawayMediaSchema = z.enum(["image", "video"]);
+export const CutawaySourceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("ai_broll"), prompt: Prompt, media: CutawayMediaSchema }),
+  z.object({ kind: z.literal("ai_self"), prompt: Prompt, media: CutawayMediaSchema }),
+  z.object({ kind: z.literal("upload"), assetId: AssetHashSchema }),
+  z.object({ kind: z.literal("diagram"), template: DiagramTemplateSchema, items: z.array(z.string().trim().min(1).max(40)).min(2).max(4) }),
+]);
+export type CutawaySource = z.infer<typeof CutawaySourceSchema>;
+/** Spec §3: atMs is measured from the beat's first reel frame (after pause cuts). */
+export const CutawaySchema = z.object({
+  source: CutawaySourceSchema,
   layout: z.enum(["full", "split"]),
   atMs: z.number().int().nonnegative(),
   durationMs: z.number().int().min(1000).max(3000),
 });
+export type Cutaway = z.infer<typeof CutawaySchema>;
 
 export const BeatSchema = z.object({
   id: BeatId,
@@ -72,6 +77,7 @@ export const EditPlanSchema = z
       z.object({ kind: z.literal("none") }),
     ]),
     sfx: SfxLevelSchema,
+    character: z.object({ id: z.uuid(), name: z.string().trim().min(1).max(40) }).optional(),
     estimate: z.object({ durationSec: z.number().nonnegative(), credits: z.number().nonnegative() }), // computed by code; credits in USD
     warnings: z.array(z.string()).default([]),
   })
@@ -94,47 +100,67 @@ export const EditPlanSchema = z
       if (!beat) ctx.addIssue({ code: "custom", path: ["hook", "coldOpenBeatId"], message: `there is no beat ${cold}` });
       else if (!beat.keep) ctx.addIssue({ code: "custom", path: ["hook", "coldOpenBeatId"], message: `the cold-open beat ${cold} is dropped` });
     }
+    const extras = new Set(plan.source.extras.map((e) => e.assetId));
+    plan.beats.forEach((b, i) => {
+      const s = b.cutaway?.source;
+      if (!s) return;
+      const path = ["beats", i, "cutaway", "source"];
+      if (s.kind === "upload" && !extras.has(s.assetId)) ctx.addIssue({ code: "custom", path, message: `Beat ${b.id} uses an upload that isn't part of this video. Pick one of its uploads.` });
+      if (s.kind === "ai_self" && !plan.character) ctx.addIssue({ code: "custom", path, message: `Beat ${b.id} has an AI shot of you, but no character is picked. Pick one in Settings or remove the shot.` });
+      if (s.kind === "diagram" && s.template === "compare" && s.items.length !== 2) ctx.addIssue({ code: "custom", path, message: "A compare diagram has exactly 2 items." });
+      if (s.kind === "diagram" && s.template === "flow" && s.items.length > 3) ctx.addIssue({ code: "custom", path, message: "A flow diagram has 2 or 3 steps." });
+    });
+    if (plan.hook.patternBreak === "broll" && !plan.beats.some((b) => b.keep && b.cutaway)) {
+      ctx.addIssue({ code: "custom", path: ["hook", "patternBreak"], message: "The B-roll pattern break needs a cutaway on a kept beat: add one, or pick zoom hit, flash or none." });
+    }
   });
 export type EditPlan = z.infer<typeof EditPlanSchema>;
 
-export const NOT_IN_PLAN_ONE = {
-  cutaway: (beatId: string) => `Beat ${beatId} has a cutaway. Cutaways arrive in a later update: remove it.`,
-  background: "Background replacement arrives in a later update: keep the original background.",
-  brollBreak: "The B-roll pattern break needs cutaways, which arrive in a later update: pick zoom hit, flash or none.",
-};
+export const NOT_YET = { background: "Background replacement arrives in a later update: keep the original background." };
 
-/** Plan 1 renders no cutaways, keeps the real background and has no B-roll pattern break. Plans 2 and 3 shrink this list. */
-export function planOneIssues(plan: EditPlan): string[] {
-  return [
-    ...plan.beats.filter((b) => b.cutaway).map((b) => NOT_IN_PLAN_ONE.cutaway(b.id)),
-    ...(plan.background.mode === "replace" ? [NOT_IN_PLAN_ONE.background] : []),
-    ...(plan.hook.patternBreak === "broll" ? [NOT_IN_PLAN_ONE.brollBreak] : []),
-  ];
+/** What the schema describes but no plan renders yet (plan 3 removes this). */
+export function notYetIssues(plan: EditPlan): string[] {
+  return plan.background.mode === "replace" ? [NOT_YET.background] : [];
 }
 
-/** Parses an edit plan, throwing an Error that lists every schema issue and every plan-1 limit as one line each. */
+/** Parses an edit plan, throwing an Error that lists every schema issue and every not-yet-supported limit as one line each. */
 export function parseEditPlan(input: unknown): EditPlan {
   const result = EditPlanSchema.safeParse(input);
   const lines = result.success
-    ? planOneIssues(result.data).map((m) => `  - ${m}`)
+    ? notYetIssues(result.data).map((m) => `  - ${m}`)
     : result.error.issues.map((issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`);
   if (result.success && lines.length === 0) return result.data;
   throw new Error(`Invalid edit plan:\n${lines.join("\n")}`);
 }
 
+/** The draft's flat cutaway (one object, no unions, so structured outputs stay simple). kind "none" = no cutaway. */
+const DraftCutawaySchema = z.object({
+  kind: z.enum(["none", "ai_broll", "ai_self", "upload", "diagram"]),
+  media: z.enum(["image", "video"]),
+  prompt: z.string(),
+  uploadId: z.string(),
+  template: z.enum(["compare", "list", "flow"]),
+  items: z.array(z.string()),
+  layout: z.enum(["full", "split"]),
+  atMs: z.number(),
+  durationMs: z.number(),
+});
+export type DraftCutaway = z.infer<typeof DraftCutawaySchema>;
+export const NO_CUTAWAY: DraftCutaway = { kind: "none", media: "image", prompt: "", uploadId: "", template: "list", items: [], layout: "full", atMs: 0, durationMs: 0 };
+
 /**
  * What Claude writes. Free of min/max constraints (structured outputs don't enforce them); empty strings and -1 mean
  * "none". emphasisWordIdx is a plain number (z.number().int() would emit safe-integer bounds); parseEditPlan checks it
- * is an integer. Code fills in the beat spans, source, estimate and warnings, then validates with parseEditPlan.
+ * is an integer. uploadId is the x1…x6 id from the prompt; code maps it to the asset. Code fills in the beat spans, source, estimate and warnings, then validates with parseEditPlan.
  */
 export const EditPlanDraftSchema = z.object({
   title: z.string(),
-  beats: z.array(z.object({ id: z.string(), keep: z.boolean(), dropReason: z.string(), emphasisWordIdx: z.number(), emoji: z.string() })),
+  beats: z.array(z.object({ id: z.string(), keep: z.boolean(), dropReason: z.string(), emphasisWordIdx: z.number(), emoji: z.string(), cutaway: DraftCutawaySchema })),
   hook: z.object({
     coldOpenBeatId: z.string(),
     headlineSmall: z.string(),
     headlineBig: z.string(),
-    patternBreak: z.enum(["zoom_hit", "flash", "none"]),
+    patternBreak: z.enum(["zoom_hit", "flash", "broll", "none"]),
     reason: z.string(),
   }),
   ending: z.object({ kind: z.enum(["cta", "loop", "none"]), keyword: z.string() }),

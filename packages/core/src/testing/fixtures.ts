@@ -1,5 +1,5 @@
 import type { EditStyle } from "../footage/style";
-import type { FaceTrack, Transcript } from "../schema/footage";
+import type { FaceTrack, FootageExtra, Transcript } from "../schema/footage";
 export const validStoryboard = () => ({
   version: 1,
   title: "3 tips",
@@ -47,13 +47,22 @@ export const footageTranscript = (): Transcript => ({
   events: [],
 });
 
+export const EXTRA_IMG = "d".repeat(64);
+export const EXTRA_VID = "e".repeat(64);
+export const CHARACTER_ID = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
+/** A landscape screenshot and a 2 s portrait clip, as ingest stores them. */
+export const fixtureExtras = (): FootageExtra[] => [
+  { assetId: EXTRA_IMG, kind: "image", width: 1920, height: 1080, durationMs: 0, label: "צילום מסך" },
+  { assetId: EXTRA_VID, kind: "video", width: 1080, height: 1920, durationMs: 2000, label: "demo clip" },
+];
+
 export const validEditPlan = () => ({
   format: "footage" as const,
   version: 1,
   title: "טריק שחוסך שעות",
   language: "he" as const,
   targetDurationSec: 15 as const,
-  source: { assetId: HASH_A, durationMs: 9000, transcriptAssetId: HASH_B, faceTrackAssetId: HASH_C },
+  source: { assetId: HASH_A, durationMs: 9000, transcriptAssetId: HASH_B, faceTrackAssetId: HASH_C, extras: [] as FootageExtra[] },
   beats: [
     { id: "b1", startWordIdx: 0, endWordIdx: 7, keep: true, emphasisWordIdx: 7 },
     { id: "b2", startWordIdx: 8, endWordIdx: 11, keep: true, emoji: "👇" },

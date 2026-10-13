@@ -1,4 +1,4 @@
-import { parseEditPlan, withFootageEstimate, type EditPlanDraft, type Transcript } from "@reel/core";
+import { NO_CUTAWAY, parseEditPlan, withFootageEstimate, type EditPlanDraft, type Transcript } from "@reel/core";
 import { houseStyle } from "@reel/video/house-style";
 import { describe, expect, it, vi } from "vitest";
 import { footageTranscript, validEditPlan } from "../../core/src/testing/fixtures";
@@ -10,7 +10,7 @@ const TRACK = "3f2c8f9e-5c1d-4a43-9d4e-2f1c3b4a5d6e";
 const REQ: FootagePlanRequest = { settings: { language: "he", targetDurationSec: 15, ctaKeyword: "AI" }, source: validEditPlan().source, transcript: footageTranscript(), library: [], warnings: [] };
 const draft = (over: Partial<EditPlanDraft> = {}): EditPlanDraft => ({
   title: "טריק שחוסך שעות",
-  beats: ["b1", "b2", "b3"].map((id) => ({ id, keep: true, dropReason: "", emphasisWordIdx: id === "b1" ? 7 : -1, emoji: id === "b2" ? "👇" : "" })),
+  beats: ["b1", "b2", "b3"].map((id) => ({ id, keep: true, dropReason: "", emphasisWordIdx: id === "b1" ? 7 : -1, emoji: id === "b2" ? "👇" : "", cutaway: NO_CUTAWAY })),
   hook: { coldOpenBeatId: "", headlineSmall: "הטריק ש", headlineBig: "חוסך שעות", patternBreak: "zoom_hit", reason: "A bold promise plus a punch-in." },
   ending: { kind: "cta", keyword: "" },
   music: { kind: "none", trackId: "", prompt: "" },
@@ -97,13 +97,13 @@ describe("createFootagePlanner", () => {
   });
   it("refuses an edit that keeps only fillers", async () => {
     const t = { ...REQ.transcript, words: [{ text: "אממ", startMs: 0, endMs: 900 }, { text: "אהה.", startMs: 1000, endMs: 2400 }] };
-    const d = draft({ beats: [{ id: "b1", keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "" }], ending: { kind: "none", keyword: "" }, hook: { ...draft().hook, headlineBig: "" } });
+    const d = draft({ beats: [{ id: "b1", keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "", cutaway: NO_CUTAWAY }], ending: { kind: "none", keyword: "" }, hook: { ...draft().hook, headlineBig: "" } });
     const model = vi.fn<EditDraftModel>(async () => reply(d));
     await expect(createFootagePlanner(model, style).plan({ ...REQ, transcript: t })).rejects.toThrow(/Keep at least one beat with speech/);
   });
   it("asks once to shorten an over-long plan, then returns it with the length left to the reviewer", async () => {
     const beats = splitBeats(longTranscript().words);
-    const keepAll = draft({ beats: beats.map((b) => ({ id: b.id, keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "" })), ending: { kind: "loop", keyword: "" } });
+    const keepAll = draft({ beats: beats.map((b) => ({ id: b.id, keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "", cutaway: NO_CUTAWAY })), ending: { kind: "loop", keyword: "" } });
     const model = vi.fn<EditDraftModel>(async () => reply(keepAll));
     const plan = await createFootagePlanner(model, style).plan({ ...REQ, source: { ...REQ.source, durationMs: 21000 }, transcript: longTranscript() });
     expect(model).toHaveBeenCalledTimes(2);

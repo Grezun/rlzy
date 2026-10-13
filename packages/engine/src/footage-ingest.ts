@@ -84,7 +84,7 @@ export async function ingestFootage(originalPath: string, deps: IngestDeps): Pro
   const transcript = await readJson(transcriptAsset, TranscriptSchema);
   if (transcript.words.length < 5) throw new FootageInputError("No speech found. This editor needs a video of you talking.");
   emit({ type: "step", step: "transcribe", status: "done" });
-  return { source: { assetId: working.hash, durationMs, transcriptAssetId: transcriptAsset.hash, faceTrackAssetId: faces.hash }, transcript };
+  return { source: { assetId: working.hash, durationMs, transcriptAssetId: transcriptAsset.hash, faceTrackAssetId: faces.hash, extras: [] }, transcript };
 }
 
 /** The conformed 1080×1920 working copy, keyed by the original's hash (ffmpeg only, so remaking it is free). */

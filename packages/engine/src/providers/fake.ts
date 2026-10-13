@@ -1,4 +1,4 @@
-import { PermanentProviderError, type EditPlanDraft } from "@reel/core";
+import { NO_CUTAWAY, PermanentProviderError, type EditPlanDraft } from "@reel/core";
 import { houseStyle } from "@reel/video/house-style";
 import { makeTestImage, makeTestTone, makeTestVideo, probe } from "@reel/media";
 import { readFile } from "node:fs/promises";
@@ -110,7 +110,7 @@ export function createFakeProviders(opts: { workDir: string; failPromptsContaini
       const trackId = user.match(/^- ([0-9a-f-]{36}) "/m)?.[1];
       const draft: EditPlanDraft = {
         title: he ? "עריכה לדוגמה" : "Sample edit",
-        beats: ids.map((id) => ({ id, keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "" })),
+        beats: ids.map((id) => ({ id, keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "", cutaway: NO_CUTAWAY })),
         hook: { coldOpenBeatId: "", headlineSmall: he ? "הטריק ש" : "The trick that", headlineBig: he ? "חוסך שעות" : "saves hours", patternBreak: "zoom_hit", reason: "Fake planner: a headline and a punch-in." },
         ending: { kind: keyword ? "cta" : "loop", keyword: keyword ?? "" },
         music: trackId ? { kind: "library", trackId, prompt: "" } : { kind: "ai", trackId: "", prompt: "calm lo-fi beat" },

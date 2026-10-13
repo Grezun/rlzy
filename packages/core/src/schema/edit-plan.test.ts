@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validEditPlan } from "../testing/fixtures";
+import { CHARACTER_ID, EXTRA_IMG, fixtureExtras, validEditPlan } from "../testing/fixtures";
 import { EditPlanDraftSchema, EditPlanSchema, parseEditPlan } from "./edit-plan";
 import { FaceTrackSchema, RawFaceTrackSchema, TranscriptSchema } from "./footage";
 
@@ -32,29 +32,56 @@ describe("EditPlanSchema", () => {
   });
 });
 
-describe("plan 1 limits", () => {
-  it("accepts the full plan 2/3 shape in the schema but parseEditPlan rejects it with clear messages", () => {
-    const p = {
-      ...validEditPlan(),
-      hook: { ...validEditPlan().hook, patternBreak: "broll" },
-      background: { mode: "replace", sections: [{ fromBeatId: "b1", source: { kind: "ai", prompt: "office" } }] },
-      beats: validEditPlan().beats.map((b, i) =>
-        i === 0 ? { ...b, cutaway: { source: { kind: "ai_broll", prompt: "laptop" }, layout: "full", atMs: 0, durationMs: 1500 } } : b,
-      ),
-    };
-    expect(EditPlanSchema.safeParse(p).success).toBe(true);
-    let message = "";
-    try { parseEditPlan(p); } catch (err) { message = (err as Error).message; }
-    expect(message).toContain("Beat b1 has a cutaway. Cutaways arrive in a later update: remove it.");
-    expect(message).toContain("Background replacement arrives in a later update: keep the original background.");
-    expect(message).toContain("The B-roll pattern break needs cutaways, which arrive in a later update: pick zoom hit, flash or none.");
+const withCutaway = (cutaway: unknown, beat = 0, over: object = {}) => ({
+  ...validEditPlan(),
+  source: { ...validEditPlan().source, extras: fixtureExtras() },
+  beats: validEditPlan().beats.map((b, i) => (i === beat ? { ...b, cutaway } : b)),
+  ...over,
+});
+const broll = { source: { kind: "ai_broll", prompt: "laptop on a desk", media: "image" }, layout: "full", atMs: 0, durationMs: 1500 };
+const message = (p: unknown) => { try { parseEditPlan(p); return ""; } catch (err) { return (err as Error).message; } };
+
+describe("cutaways (plan 2)", () => {
+  it("accepts every cutaway kind and both layouts", () => {
+    expect(parseEditPlan(withCutaway(broll)).beats[0].cutaway).toEqual(broll);
+    expect(() => parseEditPlan(withCutaway({ ...broll, layout: "split", source: { kind: "upload", assetId: EXTRA_IMG } }))).not.toThrow();
+    expect(() => parseEditPlan(withCutaway({ ...broll, source: { kind: "diagram", template: "list", items: ["אחת", "שתיים", "שלוש"] } }))).not.toThrow();
+    expect(() => parseEditPlan(withCutaway({ ...broll, source: { kind: "ai_self", prompt: "on a plane", media: "video" } }, 0, { character: { id: CHARACTER_ID, name: "Alex" } }))).not.toThrow();
   });
-  it("never offers cutaways, background or broll to Claude", () => {
+  it("keeps cutaways 1–3 s long", () => {
+    expect(message(withCutaway({ ...broll, durationMs: 900 }))).toMatch(/durationMs/);
+    expect(message(withCutaway({ ...broll, durationMs: 3100 }))).toMatch(/durationMs/);
+  });
+  it("needs uploads from this video, a character for AI shots of you, and the right number of diagram items", () => {
+    expect(message(withCutaway({ ...broll, source: { kind: "upload", assetId: "f".repeat(64) } }))).toContain("Beat b1 uses an upload that isn't part of this video. Pick one of its uploads.");
+    expect(message(withCutaway({ ...broll, source: { kind: "ai_self", prompt: "on a plane", media: "image" } }))).toContain("Beat b1 has an AI shot of you, but no character is picked. Pick one in Settings or remove the shot.");
+    expect(message(withCutaway({ ...broll, source: { kind: "diagram", template: "compare", items: ["a", "b", "c"] } }))).toContain("A compare diagram has exactly 2 items.");
+    expect(message(withCutaway({ ...broll, source: { kind: "diagram", template: "flow", items: ["a", "b", "c", "d"] } }))).toContain("A flow diagram has 2 or 3 steps.");
+  });
+  it("allows the B-roll pattern break only with a cutaway on a kept beat", () => {
+    const hook = { ...validEditPlan().hook, patternBreak: "broll" };
+    expect(() => parseEditPlan(withCutaway(broll, 0, { hook }))).not.toThrow();
+    expect(message({ ...validEditPlan(), hook })).toContain("The B-roll pattern break needs a cutaway on a kept beat: add one, or pick zoom hit, flash or none.");
+  });
+  it("still rejects background replacement (plan 3)", () => {
+    expect(message({ ...validEditPlan(), background: { mode: "replace", sections: [{ fromBeatId: "b1", source: { kind: "ai", prompt: "office" } }] } }))
+      .toContain("Background replacement arrives in a later update: keep the original background.");
+  });
+  it("parses plan-1 plans (no extras) unchanged", () => {
+    const { extras: _none, ...plan1Source } = validEditPlan().source;
+    expect(parseEditPlan({ ...validEditPlan(), source: plan1Source }).source.extras).toEqual([]);
+  });
+});
+
+describe("Claude's draft schema", () => {
+  it("offers cutaways and the B-roll break but never background replacement", () => {
     const json = JSON.stringify(EditPlanDraftSchema.toJSONSchema());
-    expect(json).not.toMatch(/cutaway|background|broll/);
+    expect(json).toMatch(/cutaway/);
+    expect(json).toMatch(/broll/);
+    expect(json).not.toMatch(/background/);
   });
   it("sends Claude a draft schema without min/max bounds", () => {
-    expect(JSON.stringify(EditPlanDraftSchema.toJSONSchema())).not.toMatch(/minimum|maximum|minLength|maxLength/);
+    expect(JSON.stringify(EditPlanDraftSchema.toJSONSchema())).not.toMatch(/minimum|maximum|minLength|maxLength|minItems|maxItems/);
   });
 });
 
