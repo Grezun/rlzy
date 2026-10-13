@@ -43,6 +43,10 @@ export const houseStyle = {
     emoji: { popFrames: 8, overshoot: 1.35 },
   },
   motion: { snapScale: 1.06, zoomBlurScale: 1.22, zoomBlurPx: 16 },
+  /** Uploads that don't fit their slot: shown whole over a blurred, dimmed, zoomed copy of themselves. */
+  cutaway: { blurPx: 40, dim: 0.35, fillScale: 1.15 },
+  /** Spec §6 DiagramCard: white line art on near-black with violet wavy lines (ref R3 panels). */
+  diagram: { bg: "#0B0A12", line: "#FFFFFF", wave: "#8B6CFF", waveOpacity: 0.35, stroke: 6, radius: 28, fontSize: 64, compactScale: 0.62, itemFrames: 8, popFrames: 6, iconSize: 64 },
   /** Under the captions (y 45 %) so neither covers the face (eyes sit at y ≈ 0.21–0.28 (ref)). */
   headline: { topPct: 58, smallSize: 62, bigSize: 168, smallColor: "#FFFFFF", bigColor: "#FEE80A", shadow: "0 8px 28px rgba(0,0,0,0.55)", popFrames: 4, popFrom: 0.6 },
   cta: { topPct: 62, smallSize: 64, bigSize: 150, color: "#FFFFFF", keywordColor: "#FEE80A", shadow: "0 8px 28px rgba(0,0,0,0.55)", scrim: "linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%)", popFrames: 6, popFrom: 0.7 },

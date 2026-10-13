@@ -91,3 +91,15 @@ export function ctaLines(keyword: string, language: "he" | "en"): { before: stri
     ? { before: "תכתבו", keyword: `'${keyword}'`, after: "בתגובות" }
     : { before: "Comment", keyword: `'${keyword}'`, after: "" };
 }
+
+/**
+ * Bottom-half speaker (layout "split"): the inner element is the full source frame, twice the panel's height. Moving it
+ * by (0.25 − cy) of its own height puts source y = cy at the panel's centre; clamped to [−50 %, 0] so no edge shows.
+ */
+export function splitTransform(cy: number): string {
+  const t = Math.min(0, Math.max(-0.5, 0.25 - cy));
+  return `translateY(${(t * 100).toFixed(3)}%)`;
+}
+
+/** Linear zoom from 1 to `to` across the cutaway (spec §6: stills +6 %). */
+export const kenBurnsScale = (frame: number, frames: number, to: number) => 1 + (to - 1) * clamp01(frame / Math.max(1, frames - 1));

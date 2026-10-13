@@ -37,3 +37,24 @@ export function sampleFootageTimeline(lang: "he" | "en", videoSrc?: string): Tim
     ending: { kind: "cta", keyword: "AI", fromFrame: 135, durationInFrames: 75 },
   };
 }
+
+/** 4.5 s of cutaways with no media files: a split flow diagram (pill on the seam), then full compare and list cards. */
+export function sampleCutawayTimeline(lang: "he" | "en"): Timeline {
+  const he = lang === "he";
+  const t = he
+    ? { flow: ["מקליטים", "מעלים", "מקבלים רילס"], compare: ["עריכה ידנית", "עריכה אוטומטית"], list: ["בלי חיבור", "בחינם", "בלי הגבלה"] }
+    : { flow: ["Record", "Upload", "Get a reel"], compare: ["Manual edit", "Auto edit"], list: ["Offline", "Free", "No limits"] };
+  return {
+    fps: 30, width: 1080, height: 1920, durationInFrames: 135, language: lang, direction: he ? "rtl" : "ltr",
+    style: { captionPreset: "pill", font: "Heebo", palette: ["#3A2E5C", "#9F92C3"] },
+    audio: { musicDuckingDb: -12 },
+    clips: [{ sceneId: "g1", kind: "graphic", fromFrame: 0, durationInFrames: 135, motion: "none", transitionIn: "cut" }],
+    captions: { words: [{ text: he ? "ככה" : "Like", startMs: 0, endMs: 300 }], pages: [{ fromFrame: 0, durationInFrames: 45, topPct: 50, words: [{ text: he ? "ככה" : "Like", emphasis: false, startFrame: 0 }, { text: he ? "זה" : "this", emphasis: false, startFrame: 10 }] }] },
+    overlays: [],
+    cutaways: [
+      { id: "b1", fromFrame: 0, durationInFrames: 45, layout: "split", media: { kind: "diagram", template: "flow", items: t.flow } },
+      { id: "b2", fromFrame: 45, durationInFrames: 45, layout: "full", media: { kind: "diagram", template: "compare", items: t.compare } },
+      { id: "b3", fromFrame: 90, durationInFrames: 45, layout: "full", media: { kind: "diagram", template: "list", items: t.list } },
+    ],
+  };
+}

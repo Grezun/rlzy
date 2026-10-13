@@ -3,6 +3,7 @@ import React from "react";
 import { AbsoluteFill, Audio, Sequence } from "remotion";
 import { Captions } from "./Captions";
 import { Clip } from "./Clip";
+import { Cutaways } from "./footage/Cutaways";
 import { CtaCard } from "./footage/CtaCard";
 import { HookHeadline } from "./footage/HookHeadline";
 import { PatternBreak } from "./footage/PatternBreak";
@@ -57,6 +58,7 @@ export const Reel: React.FC<ReelProps> = ({ timeline }) => {
           </Sequence>
         );
       })}
+      <Cutaways timeline={timeline} />
       <Overlays timeline={timeline} />
       <HookHeadline timeline={timeline} />
       <CtaCard timeline={timeline} />

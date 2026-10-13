@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, revealedCount, speakerTransform, visiblePages, wordPop } from "./motion";
+import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, kenBurnsScale, revealedCount, speakerTransform, splitTransform, visiblePages, wordPop } from "./motion";
 
 describe("speakerTransform", () => {
   const punch = { cx: 0.5, cy: 0.4, scaleFrom: 1, scaleTo: 1.3, punchFrames: 6 };
@@ -93,5 +93,18 @@ describe("clip entries", () => {
   });
   it("speakerTransform multiplies the zoom and still never shows a frame edge", () => {
     expect(speakerTransform({ cx: 0.5, cy: 0.4, scaleFrom: 1, scaleTo: 1 }, 0, 30, 1.06)).toBe("scale(1.0600) translate(0.000%, 2.830%)");
+  });
+});
+
+describe("split speaker and Ken Burns", () => {
+  it("moves the full frame so the face sits at the bottom panel's centre, never showing past the frame", () => {
+    expect(splitTransform(0.285)).toBe("translateY(-3.500%)");
+    expect(splitTransform(0.5)).toBe("translateY(-25.000%)");
+    expect(splitTransform(0.1)).toBe("translateY(0.000%)");
+    expect(splitTransform(0.95)).toBe("translateY(-50.000%)");
+  });
+  it("zooms stills +6 % across the cutaway", () => {
+    expect(kenBurnsScale(0, 45, 1.06)).toBe(1);
+    expect(kenBurnsScale(44, 45, 1.06)).toBeCloseTo(1.06, 6);
   });
 });
