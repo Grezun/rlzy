@@ -1,13 +1,14 @@
 import { parseEditPlan, SFX_NAMES, withFootageEstimate, type EditPlan } from "@reel/core";
 import { makeSfxPlaceholders, makeTestVideo, pixelRgb, prepareBackdrop, probe } from "@reel/media";
 import { houseStyle } from "@reel/video/house-style";
-import { mkdtemp } from "node:fs/promises";
+import { copyFile, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FileAssetStore } from "./asset-store";
 import { noFaceTracker } from "./face-tracker";
-import { backgroundPrompt } from "./footage-background";
+import { backgroundPrompt, makeSpeakerPlate } from "./footage-background";
+import { makeBudget } from "./footage-cutaways";
 import { buildFootageTimeline, generateFootageAssets, renderFootage } from "./footage-generate";
 import { footageHashes, ingestFootage, loadFootageInputs } from "./footage-ingest";
 import { createFakeProviders } from "./providers/fake";
@@ -79,7 +80,7 @@ describe("background replacement at generation (fake still, fake cut-out, real f
   it("makes one paid attempt: a failed still is a note and the reel renders on the real background", async () => {
     const { dir, plan, deps } = await prepared();
     let calls = 0;
-    const broken = { model: "fake/broken", generate: async () => { calls++; throw new Error("blocked by content moderation"); } };
+    const broken = { model: "fake/broken", generate: async () => { calls++; throw new Error("blocked by content moderation\nrequest 4f2a: policy=nsfw"); } };
     const gen = await generateFootageAssets(plan, { ...deps, image: broken });
     expect(calls).toBe(1);
     expect(gen.plate).toBeUndefined();
@@ -87,6 +88,33 @@ describe("background replacement at generation (fake still, fake cut-out, real f
     const out = await renderFootage(plan, gen, deps, join(dir, "out"));
     expect(out.timeline.clips.every((c) => c.src!.endsWith(`${plan.source.assetId}.mp4`))).toBe(true);
   }, 900_000);
+
+  it("a compositing failure after paying is a note; the still stays cached, so a retry is free", async () => {
+    const { dir, plan, deps, providers, store } = await prepared();
+    const matte = (await store.get(plan.source.matteAssetId!))!;
+    await copyFile(matte.path, join(dir, "matte-backup.mp4"));
+    await writeFile(matte.path, "not a video");
+    const failed = await generateFootageAssets(plan, deps);
+    expect(failed.plate).toBeUndefined();
+    expect(failed.notes).toHaveLength(1);
+    expect(failed.notes[0]).toMatch(new RegExp(`^Your background couldn't be replaced \\([^\\n]+\\), ${KEEP}\\.$`));
+    expect(providers.calls.image).toBe(1);
+    await copyFile(join(dir, "matte-backup.mp4"), matte.path);
+    const retried = await generateFootageAssets(plan, deps);
+    expect(retried.notes).toEqual([]);
+    expect(retried.plate).toBeDefined();
+    expect(providers.calls.image).toBe(1);
+  }, 900_000);
+
+  it("a store that fails to read is a note, with no plate and no paid call", async () => {
+    const { plan, deps, providers, store } = await prepared();
+    const inputs = await loadFootageInputs(store, plan.source);
+    const failing = { root: store.root, putFile: store.putFile.bind(store), get: async () => { throw new Error("index lookup failed: connection reset\n    at find (storage.ts:143)"); } };
+    const res = await makeSpeakerPlate(plan, inputs, { image: providers.image, store: failing, tmpDir: join(deps.tmpDir, "background"), log: () => {}, budget: makeBudget(plan.estimate.credits), style });
+    expect(res.plate).toBeUndefined();
+    expect(res.notes).toEqual([`Your background couldn't be replaced (index lookup failed: connection reset), ${KEEP}.`]);
+    expect(providers.calls.image).toBe(0);
+  }, 300_000);
 
   it("never pays for a still when the cut-out is missing", async () => {
     const { plan, deps, providers } = await prepared();
