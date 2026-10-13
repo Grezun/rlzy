@@ -1,6 +1,6 @@
 import { parseEditPlan, type EditPlan } from "@reel/core";
 import type { JobProgress } from "@reel/db";
-import { createFakeProviders, FileAssetStore, noFaceTracker, type FootagePlanRequest } from "@reel/engine";
+import { createFakeProviders, fakeSegmenter, FileAssetStore, noFaceTracker, type FootagePlanRequest } from "@reel/engine";
 import { makeTestImage, makeTestVideo } from "@reel/media";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -62,6 +62,14 @@ describe("ingest_footage", () => {
     const plan = parseEditPlan(s.db.storyboards[0].json);
     expect(plan.warnings).toEqual(s.requests[0].warnings);
     expect(plan.music).toEqual({ kind: "library", assetId: TRACK });
+  }, 300_000);
+
+  it("cuts the speaker out at ingest when the worker has a segmenter, and reports the step", async () => {
+    const s = await setup();
+    const reports: JobProgress[] = [];
+    await createIngestFootageHandler({ ...s.deps, segmenter: fakeSegmenter })(ingestJob(), { report: (p) => reports.push(p), log: () => {} });
+    expect((s.db.storyboards[0].json as EditPlan).source.matteAssetId).toMatch(/^[0-9a-f]{64}$/);
+    expect(reports.at(-1)?.steps).toMatchObject({ cutout: "done", plan: "done" });
   }, 300_000);
 
   it("refuses a path that belongs to another project and marks the project failed", async () => {

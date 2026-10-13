@@ -1,4 +1,4 @@
-import { addExifOrientation, faceHelperAvailable, FIXTURE_TALKING_HEAD, makeTestImage, makeTestVideo, probe, runFfmpeg } from "@reel/media";
+import { addExifOrientation, faceHelperAvailable, FIXTURE_TALKING_HEAD, makeTestImage, makeTestVideo, matteCoverage, probe, runFfmpeg } from "@reel/media";
 import { existsSync } from "node:fs";
 import { copyFile, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -8,6 +8,7 @@ import { FileAssetStore } from "./asset-store";
 import { createFaceTracker, noFaceTracker, visionFaceTracker } from "./face-tracker";
 import { footageHashes, ingestExtras, ingestFootage, loadFootageInputs } from "./footage-ingest";
 import { createFakeProviders } from "./providers/fake";
+import { createSegmenter, fakeSegmenter, type Segmenter } from "./segmenter";
 
 async function setup() {
   const dir = await mkdtemp(join(tmpdir(), "ingest-"));
@@ -232,4 +233,67 @@ describe("ingest extras", () => {
     expect(extras.map((e) => e.label)).toEqual(["good"]);
     expect(warnings).toEqual(['The extra file "broken" couldn\'t be read, so it was left out.']);
   }, 120_000);
+});
+
+describe("ingestFootage: the cut-out (plan 3)", () => {
+  const counting = (inner: Segmenter) => {
+    const calls: string[] = [];
+    return { calls, segmenter: { model: inner.model, matte: async (v: string, f: string, o: string) => { calls.push(v); await inner.matte(v, f, o); } } };
+  };
+
+  it("cuts the speaker out after transcribing: a matte the size and length of the working copy, cached, with its steps", async () => {
+    const { dir, deps } = await setup();
+    await makeTestVideo(join(dir, "v.mp4"), { durationSec: 2, width: 360, height: 640, withAudio: true });
+    const spy = counting(fakeSegmenter);
+    const steps: string[] = [];
+    const run = () => ingestFootage(join(dir, "v.mp4"), { ...deps, segmenter: spy.segmenter, onEvent: (e) => e.type === "step" && steps.push(`${e.step}:${e.status}`) });
+    const { source, warnings } = await run();
+    expect(warnings).toEqual([]);
+    const matte = await deps.store.get(source.matteAssetId!);
+    const info = await probe(matte!.path);
+    expect(info.video).toMatchObject({ width: 1080, height: 1920 });
+    expect(Math.abs(info.video!.durationSec * 1000 - source.durationMs)).toBeLessThan(100);
+    expect(await matteCoverage(matte!.path)).toBeGreaterThan(0.15);
+    expect(matte!.meta).toMatchObject({ kind: "video", model: "fake/matte-ellipse" });
+    expect(steps).toEqual(["conform:running", "conform:done", "faces:running", "faces:done", "transcribe:running", "transcribe:done", "cutout:running", "cutout:done"]);
+    expect((await probe(spy.calls[0])).video).toMatchObject({ width: 1080, height: 1920 });
+    await run();
+    expect(spy.calls).toHaveLength(1);
+  }, 300_000);
+
+  it("turns a missing helper into a plan warning, never a failure, and leaves the video without a cut-out", async () => {
+    const { dir, deps } = await setup();
+    await makeTestVideo(join(dir, "v.mp4"), { durationSec: 2, width: 360, height: 640, withAudio: true });
+    const { source, warnings } = await ingestFootage(join(dir, "v.mp4"), { ...deps, segmenter: createSegmenter("real", false) });
+    expect(source.matteAssetId).toBeUndefined();
+    expect(warnings).toEqual(['Background replacement is off for this video: the cut-out tool isn\'t built on this worker. Run "npm run build:segment-helper" on the worker Mac, then upload the video again.']);
+  }, 300_000);
+
+  it.each([
+    ["finds nobody", "color=c=black:s=1080x1920:r=30:d=2", "the cut-out couldn't find you in the picture"],
+    ["is too short", "color=c=white:s=1080x1920:r=30:d=1", "the cut-out doesn't match the video's length"],
+  ])("warns when the cut-out %s", async (_name, lavfi, reason) => {
+    const { dir, deps } = await setup();
+    await makeTestVideo(join(dir, "v.mp4"), { durationSec: 2, width: 360, height: 640, withAudio: true });
+    const bad: Segmenter = { model: `fake/bad-${reason.length}`, matte: async (_v, _f, out) => { await runFfmpeg(["-f", "lavfi", "-i", lavfi, "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", out]); } };
+    const { source, warnings } = await ingestFootage(join(dir, "v.mp4"), { ...deps, segmenter: bad });
+    expect(source.matteAssetId).toBeUndefined();
+    expect(warnings).toEqual([`Background replacement is off for this video: ${reason}.`]);
+  }, 300_000);
+
+  it("reports a failing helper as a warning with its first line", async () => {
+    const { dir, deps } = await setup();
+    await makeTestVideo(join(dir, "v.mp4"), { durationSec: 2, width: 360, height: 640, withAudio: true });
+    const broken: Segmenter = { model: "fake/broken", matte: async () => { throw new Error("Vision gave up\nstack…"); } };
+    expect((await ingestFootage(join(dir, "v.mp4"), { ...deps, segmenter: broken })).warnings).toEqual(["Background replacement is off for this video: cutting you out failed (Vision gave up)."]);
+  }, 300_000);
+
+  it("never cuts out a video without speech (it fails first)", async () => {
+    const { dir, deps } = await setup();
+    await makeTestVideo(join(dir, "v.mp4"), { durationSec: 2, width: 360, height: 640, withAudio: true });
+    const spy = counting(fakeSegmenter);
+    const quiet = { model: "fake/quiet", transcribe: async () => ({ transcript: { languageCode: "heb", languageProbability: 0.5, words: [{ text: "אה", startMs: 0, endMs: 300 }], events: [] } }) };
+    await expect(ingestFootage(join(dir, "v.mp4"), { ...deps, transcriber: quiet, segmenter: spy.segmenter })).rejects.toThrow(/No speech found/);
+    expect(spy.calls).toEqual([]);
+  }, 300_000);
 });

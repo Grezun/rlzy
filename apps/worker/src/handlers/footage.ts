@@ -1,6 +1,6 @@
 import { parseEditPlan, type EditPlan, type FootageSettings, type FootageSource, type PipelineEvent, type Transcript } from "@reel/core";
 import { applyPipelineEvent, BUCKETS, emptyProgress, IngestFootageJobPayloadSchema, PlanFootageJobPayloadSchema } from "@reel/db";
-import { ingestFootage, loadFootageInputs, transcriptWarnings, type AssetStore, type FaceTracker, type FootagePlanner, type Transcriber } from "@reel/engine";
+import { ingestFootage, loadFootageInputs, transcriptWarnings, type AssetStore, type FaceTracker, type FootagePlanner, type Segmenter, type Transcriber } from "@reel/engine";
 import { houseStyle } from "@reel/video/house-style";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -9,7 +9,7 @@ import type { JobHandler } from "../loop";
 import type { ReelDb } from "../reel-db";
 import type { BlobStore } from "../storage";
 
-export type FootageHandlerDeps = { store: AssetStore; blobs: BlobStore; db: ReelDb; transcriber: Transcriber; faceTracker: FaceTracker; footagePlanner: FootagePlanner };
+export type FootageHandlerDeps = { store: AssetStore; blobs: BlobStore; db: ReelDb; transcriber: Transcriber; faceTracker: FaceTracker; footagePlanner: FootagePlanner; segmenter?: Segmenter };
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -66,7 +66,7 @@ export function createIngestFootageHandler(deps: FootageHandlerDeps): JobHandler
         await deps.blobs.download(BUCKETS.assets, e.storagePath, path);
         extraFiles.push({ path, label: e.label });
       }
-      const { source, transcript, warnings } = await ingestFootage(original, { store: deps.store, transcriber: deps.transcriber, faceTracker: deps.faceTracker, tmpDir, log: ctx.log, onEvent }, extraFiles);
+      const { source, transcript, warnings } = await ingestFootage(original, { store: deps.store, transcriber: deps.transcriber, faceTracker: deps.faceTracker, segmenter: deps.segmenter, tmpDir, log: ctx.log, onEvent }, extraFiles);
       onEvent({ type: "step", step: "plan", status: "running" });
       await planAndSave(deps, job.project_id, { settings, source, transcript, extraWarnings: warnings });
       onEvent({ type: "step", step: "plan", status: "done" });

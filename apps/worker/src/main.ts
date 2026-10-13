@@ -1,5 +1,5 @@
 import type { Database } from "@reel/db";
-import { costModels, createFaceTracker, createFootagePlannerFor, createPlannerFor, createProviders, FileAssetStore, loadConfig, loadEnvFile, resolveSfxDir } from "@reel/engine";
+import { costModels, createFaceTracker, createFootagePlannerFor, createPlannerFor, createProviders, createSegmenter, FileAssetStore, loadConfig, loadEnvFile, resolveSfxDir } from "@reel/engine";
 import { assertFfmpegAvailable } from "@reel/media";
 import { createClient } from "@supabase/supabase-js";
 import { mkdtemp } from "node:fs/promises";
@@ -40,6 +40,7 @@ const handlers = buildHandlers({
   costModels: costModels(config),
   transcriber: providers.transcriber,
   faceTracker: createFaceTracker(fake ? "fake" : "real"),
+  segmenter: createSegmenter(fake ? "fake" : "real"),
   footagePlanner: createFootagePlannerFor(config, workDir),
   sfxDir,
 });

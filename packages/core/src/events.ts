@@ -1,4 +1,4 @@
-export type PipelineStep = "voice" | "visuals" | "render" | "export" | "conform" | "transcribe" | "faces" | "plan" | "music";
+export type PipelineStep = "voice" | "visuals" | "render" | "export" | "conform" | "transcribe" | "faces" | "plan" | "music" | "cutout" | "background";
 
 /** Progress events emitted by the engine pipeline; the worker folds them into the job's progress JSON. */
 export type PipelineEvent =

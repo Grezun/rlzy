@@ -19,6 +19,8 @@ export type BuildHandlersDeps = {
   transcriber: FootageHandlerDeps["transcriber"];
   faceTracker: FootageHandlerDeps["faceTracker"];
   footagePlanner: FootageHandlerDeps["footagePlanner"];
+  /** Plan 3 cut-out at ingest: Apple Vision, or the fake ellipse on a fake worker without the helper. */
+  segmenter: NonNullable<FootageHandlerDeps["segmenter"]>;
   /** Sound-effect pack directory, or null when this worker has none (reels render without them, with a note). */
   sfxDir: string | null;
 };
@@ -27,7 +29,7 @@ export type BuildHandlersDeps = {
 export function buildHandlers(deps: BuildHandlersDeps): Handlers {
   const fake = deps.mode === "fake";
   const footage: FootageHandlerDeps = {
-    store: deps.store, blobs: deps.blobs, db: deps.db, transcriber: deps.transcriber, faceTracker: deps.faceTracker, footagePlanner: deps.footagePlanner,
+    store: deps.store, blobs: deps.blobs, db: deps.db, transcriber: deps.transcriber, faceTracker: deps.faceTracker, footagePlanner: deps.footagePlanner, segmenter: deps.segmenter,
   };
   return {
     plan: createPlanHandler({
