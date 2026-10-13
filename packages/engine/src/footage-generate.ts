@@ -1,9 +1,10 @@
-import { compileFootage, estimateFootageCost, estimateReelSeconds, musicBillSeconds, planCallouts, planCutaways, SFX_NAMES, type EditPlan, type EditStyle, type PipelineEvent, type SfxName, type Timeline } from "@reel/core";
+import { compileFootage, estimateReelSeconds, musicBillSeconds, musicCost, planCallouts, planCutaways, SFX_NAMES, type EditPlan, type EditStyle, type PipelineEvent, type SfxName, type Timeline } from "@reel/core";
 import { concatAudioSegments, fitMusic, makeSfxPlaceholders, normalizeLoudness, sha256File, SOCIAL_LOUDNESS } from "@reel/media";
 import { missingSfx, SFX_DIR, sfxFileIn } from "@reel/video/sfx";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import type { AssetStore, StoredAsset } from "./asset-store";
+import { makeSpeakerPlate } from "./footage-background";
 import { generateCutaways, makeBudget, takeBudget, type CutawayAssets } from "./footage-cutaways";
 import { footageHashes, loadFootageInputs, type FootageInputs, type OriginalFetch } from "./footage-ingest";
 import { cached, estUsd, renderTimeline, type RenderOutputs } from "./pipeline";
@@ -28,7 +29,11 @@ export type FootageGenDeps = {
   /** The original upload, to re-make a working copy that was lost (free: ffmpeg only). */
   original?: OriginalFetch;
 };
-export type FootageGenerated = { inputs: FootageInputs; voice: StoredAsset; music?: StoredAsset; sfx: Partial<Record<SfxName, StoredAsset>>; cutaways: CutawayAssets; notes: string[] };
+export type FootageGenerated = {
+  inputs: FootageInputs; voice: StoredAsset; music?: StoredAsset; sfx: Partial<Record<SfxName, StoredAsset>>; cutaways: CutawayAssets; notes: string[];
+  /** Plan 3: the speaker over the AI scene; every speaker clip plays it instead of the working copy. Absent: the real background. */
+  plate?: StoredAsset;
+};
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -82,7 +87,7 @@ export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps
     }
   } else if (plan.music.kind === "ai") {
     const prompt = plan.music.prompt;
-    if (!takeBudget(budget, estimateFootageCost(plan, billSec))) {
+    if (!takeBudget(budget, musicCost(plan, billSec))) {
       notes.push("AI music was skipped: it would cost more than the approved estimate. Use Edit as new version and approve again to update it.");
     } else {
       // Exactly one paid generation per job: the approved estimate covers one track, and a failure after the provider
@@ -102,6 +107,11 @@ export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps
     }
   }
   emit({ type: "step", step: "music", status: "done" });
+
+  emit({ type: "step", step: "background", status: "running" });
+  const background = await makeSpeakerPlate(plan, inputs, { image: deps.image, store, tmpDir: join(deps.tmpDir, "background"), log, budget, style: deps.style });
+  notes.push(...background.notes);
+  emit({ type: "step", step: "background", status: "done" });
 
   emit({ type: "step", step: "visuals", status: "running" });
   const { placed, warnings: placementNotes } = planCutaways(plan, inputs.transcript.words, deps.style);
@@ -128,14 +138,14 @@ export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps
     }
   }
   for (const n of notes) emit({ type: "note", message: n });
-  return { inputs, voice, music, sfx, cutaways: cut.assets, notes };
+  return { inputs, voice, music, sfx, cutaways: cut.assets, notes, ...(background.plate ? { plate: background.plate } : {}) };
 }
 
 /** The footage Timeline for this plan + generated assets, with each asset file mapped through `urlFor`. */
 export function buildFootageTimeline(plan: EditPlan, gen: FootageGenerated, urlFor: (fileName: string) => string, style: EditStyle): Timeline {
   const sfx = Object.fromEntries(Object.entries(gen.sfx).map(([name, a]) => [name, urlFor(a!.fileName)]));
   return compileFootage(plan, gen.inputs.transcript, gen.inputs.faceTrack, {
-    videoSrc: urlFor(gen.inputs.working.fileName),
+    videoSrc: urlFor((gen.plate ?? gen.inputs.working).fileName),
     voiceSrc: urlFor(gen.voice.fileName),
     ...(gen.music ? { musicSrc: urlFor(gen.music.fileName) } : {}),
     sfx,

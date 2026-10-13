@@ -31,6 +31,8 @@ export const footageHashes = {
   extra: (sha: string, kind: "image" | "video") => inputHash({ step: "footage-extra", v: 1, sha, kind }),
   selfImage: (model: string, prompt: string, referenceId: string, strength: number) => inputHash({ step: "self-image", v: 1, model, prompt, referenceId, strength }),
   cutawayFit: (rawHash: string, durationMs: number) => inputHash({ step: "cutaway-fit", v: 1, rawHash, durationMs }),
+  background: (model: string, prompt: string) => inputHash({ step: "background", v: 1, model, prompt }),
+  plate: (workingHash: string, matteHash: string, backgrounds: { imageHash: string; fromMs: number }[], look: object) => inputHash({ step: "plate", v: 1, workingHash, matteHash, backgrounds, look }),
 };
 
 export type IngestDeps = {
