@@ -169,3 +169,6 @@ export function diagramFontScale(items: string[], steps: ReadonlyArray<readonly 
 
 /** 0 → 1 over `frames`, eased: a line drawing itself (checkmarks, flow connectors). */
 export const drawProgress = (frame: number, frames: number) => easeOutCubic(clamp01(frame / frames));
+
+/** Inline padding a compare tile needs on its seam side so the VS badge (radius icon/2 plus its ring, half-sunk into the tile past half the gap) never touches the text. */
+export const badgeClearance = (icon: number, ring: number, gap: number, clear: number) => icon / 2 + ring - gap / 2 + clear;

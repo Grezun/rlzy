@@ -4,7 +4,7 @@ import { AbsoluteFill, useCurrentFrame } from "remotion";
 import { HEEBO } from "../fonts";
 import { houseStyle } from "../house-style";
 import { CheckDraw } from "./icons";
-import { diagramFontScale, drawProgress, springValue } from "./motion";
+import { badgeClearance, diagramFontScale, drawProgress, springValue } from "./motion";
 
 const d = houseStyle.diagram;
 type Diagram = Extract<TimelineCutaway["media"], { kind: "diagram" }>;
@@ -46,17 +46,18 @@ export const DiagramCard: React.FC<{ diagram: Diagram; direction: Timeline["dire
     ));
   } else if (diagram.template === "compare") {
     const vs = springValue(at(2), d.spring);
+    const seamPad = badgeClearance(icon, d.badgeRing * k, d.tileGap * k, d.badgeClear * k);
     const tile = (t: string, i: number) => (
-      <div key={i} style={{ ...enter(i), flex: 1, background: d.tile, borderRadius: d.radius * 0.7 * k, display: "flex", alignItems: "center", justifyContent: "center", padding: 28 * k, textAlign: "center" }}>
+      <div key={i} style={{ ...enter(i), flex: 1, background: d.tile, borderRadius: d.radius * 0.7 * k, display: "flex", alignItems: "center", justifyContent: "center", padding: 28 * k, [i === 0 ? "paddingInlineEnd" : "paddingInlineStart"]: seamPad, textAlign: "center" }}>
         <span style={text}>{t}</span>
       </div>
     );
     body = (
-      <div style={{ flex: 1, display: "flex", alignItems: "stretch", gap: 24 * k, position: "relative" }}>
+      <div style={{ flex: 1, display: "flex", alignItems: "stretch", gap: d.tileGap * k, position: "relative" }}>
         {tile(diagram.items[0], 0)}
         {tile(diagram.items[1], 1)}
         <div style={{ position: "absolute", top: "50%", left: "50%", transform: `translate(-50%, -50%) scale(${vs.toFixed(4)})` }}>
-          {circle(<span style={{ ...badgeText, fontSize: icon * 0.36 }}>VS</span>, { boxShadow: `0 0 0 ${10 * k}px ${d.card}` })}
+          {circle(<span style={{ ...badgeText, fontSize: icon * 0.36 }}>VS</span>, { boxShadow: `0 0 0 ${d.badgeRing * k}px ${d.card}` })}
         </div>
       </div>
     );

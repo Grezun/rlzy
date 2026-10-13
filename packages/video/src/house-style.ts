@@ -71,7 +71,7 @@ export const houseStyle = {
     fontSize: 68, fontWeight: 700, compactScale: 0.7, iconSize: 92,
     // Items spring in one after another; checkmarks and flow lines draw themselves.
     itemFrames: 7, spring: { stiffness: 170, damping: 15 }, drawFrames: 10, riseFrom: 48,
-    drawDelayFrames: 4, itemScaleFrom: 0.92, cardScaleFrom: 0.94, opacityGain: 1.5,
+    drawDelayFrames: 4, tileGap: 24, badgeRing: 10, badgeClear: 20, itemScaleFrom: 0.92, cardScaleFrom: 0.94, opacityGain: 1.5,
     // [longest item over N characters, text scale]: Hebrew steps run up to 40 characters.
     fontSteps: [[30, 0.68], [20, 0.82]] as ReadonlyArray<readonly [number, number]>,
   },

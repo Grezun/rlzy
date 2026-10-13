@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, cutawayMotion, kenBurnsTransform, parallaxFill, revealedCount, springValue, diagramFontScale, drawProgress, speakerTransform, splitTransform, visiblePages, wordPulse } from "./motion";
+import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, cutawayMotion, kenBurnsTransform, parallaxFill, revealedCount, badgeClearance, springValue, diagramFontScale, drawProgress, speakerTransform, splitTransform, visiblePages, wordPulse } from "./motion";
 import { houseStyle } from "../house-style";
 
 describe("speakerTransform", () => {
@@ -178,5 +178,15 @@ describe("diagram motion", () => {
     expect(drawProgress(-2, 10)).toBe(0);
     expect(drawProgress(10, 10)).toBe(1);
     expect(drawProgress(5, 10)).toBeGreaterThan(0.5);
+  });
+});
+
+describe("compare badge clearance", () => {
+  it("clears the badge ring plus the margin on the seam side", () => {
+    const { iconSize, badgeRing, tileGap, badgeClear } = houseStyle.diagram;
+    // Badge reaches iconSize/2 + ring − gap/2 into each tile; the text must start further in than that.
+    const reach = iconSize / 2 + badgeRing - tileGap / 2;
+    expect(badgeClearance(iconSize, badgeRing, tileGap, badgeClear)).toBe(reach + badgeClear);
+    expect(badgeClear).toBeGreaterThan(0);
   });
 });
