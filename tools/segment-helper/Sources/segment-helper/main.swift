@@ -134,12 +134,19 @@ do {
   var prev = [Float](repeating: 0, count: w * h)
   var havePrev = false
   var count = 0
+  var dropped = 0
   var cursor = 0
   let started = Date()
   let stdout = FileHandle.standardOutput
 
   while let buffer = output.copyNextSampleBuffer() {
-    guard let pixels = CMSampleBufferGetImageBuffer(buffer) else { continue }
+    guard let pixels = CMSampleBufferGetImageBuffer(buffer) else {
+      // Keep the matte frame-aligned with the video: repeat the last matte (black before the first) instead of skipping.
+      stdout.write(Data(frame))
+      count += 1
+      dropped += 1
+      continue
+    }
     let tMs = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(buffer)) * 1000
     try sequence.perform([request], on: pixels, orientation: .up)
     guard let mask = request.results?.first?.pixelBuffer else { fail("no matte for frame \(count)") }
@@ -162,7 +169,7 @@ do {
   }
   if reader.status == .failed { fail("reading \(url.path) failed: \(reader.error?.localizedDescription ?? "unknown error")") }
   let seconds = Date().timeIntervalSince(started)
-  note(String(format: "STATS frames=%d seconds=%.1f fps=%.1f", count, seconds, Double(count) / max(seconds, 0.001)))
+  note(String(format: "STATS frames=%d dropped=%d seconds=%.1f fps=%.1f", count, dropped, seconds, Double(count) / max(seconds, 0.001)))
 } catch {
   fail("segment-helper: \(error.localizedDescription)")
 }

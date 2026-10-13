@@ -24,7 +24,7 @@ export class SegmentHelperError extends Error {
  * the matte cache key carries only this id plus MATTE_REFINE, so an unbumped change reuses stale mattes. Bump it too when
  * MATTE_H264 or the structure of matteRefineFilter changes (neither is part of the key).
  */
-export const MATTE_MODEL = "vision/person-segmentation-accurate-v1";
+export const MATTE_MODEL = "vision/person-segmentation-accurate-v2";
 
 /**
  * Matte settings from the plan-3 spike. The helper blends each frame with its previous output (smooth = the previous
