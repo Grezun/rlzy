@@ -44,3 +44,32 @@ export function retryLabel(o: SendOutcome): "Resume upload" | "Try again" | "Upl
   if (o.kind === "failed") return o.uploaded ? "Try again" : "Upload again";
   return null;
 }
+
+const EXTRA_TYPES: Record<string, string> = { mp4: "video/mp4", mov: "video/quicktime", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
+export const extraContentType = (ext: string) => EXTRA_TYPES[ext] ?? "application/octet-stream";
+
+/**
+ * After finish says a file is missing from storage ("Upload again"), `done` no longer matches storage: forget it, so
+ * the next send uploads every file again. Interruptions and failed recordings keep it (nothing is missing there).
+ */
+export function forgetUploadsAfter(done: Set<string>, outcome: SendOutcome): void {
+  if (outcome.kind === "failed" && !outcome.uploaded) done.clear();
+}
+
+/**
+ * Uploads every item not yet in `done`, in order; each finished one joins `done`, so "Resume upload" never sends a
+ * finished file again (tus forgets finished uploads and would start over). Progress is by bytes over all items.
+ */
+export async function uploadAll<T extends { objectName: string; size: number }>(
+  items: T[], done: Set<string>, upload: (item: T, onFraction: (f: number) => void) => Promise<void>, onProgress: (fraction: number) => void,
+): Promise<void> {
+  const total = items.reduce((s, i) => s + i.size, 0) || 1;
+  const doneBytes = () => items.filter((i) => done.has(i.objectName)).reduce((s, i) => s + i.size, 0);
+  for (const item of items) {
+    if (done.has(item.objectName)) continue;
+    const base = doneBytes();
+    await upload(item, (f) => onProgress((base + f * item.size) / total));
+    done.add(item.objectName);
+    onProgress(doneBytes() / total);
+  }
+}

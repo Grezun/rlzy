@@ -44,7 +44,7 @@ async function signedIn() {
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 const expired = { ok: false as const, errors: ["Your session expired. Sign in again."] };
 
-export async function startFootageUpload(input: { settings: FootageSettings; fileName: string; size: number; durationSec: number | null }): Promise<ActionResult<{ projectId: string; storagePath: string }>> {
+export async function startFootageUpload(input: { settings: FootageSettings; fileName: string; size: number; durationSec: number | null; extras?: { name: string; size: number }[] }): Promise<ActionResult<{ projectId: string; storagePath: string; extraPaths: string[] }>> {
   const sb = await signedIn();
   if (!sb) return expired;
   try {
@@ -54,7 +54,7 @@ export async function startFootageUpload(input: { settings: FootageSettings; fil
   }
 }
 
-export async function finishFootageUpload(input: { projectId: string; storagePath: string; settings: FootageSettings }): Promise<ActionResult> {
+export async function finishFootageUpload(input: { projectId: string; storagePath: string; settings: FootageSettings; extras: { storagePath: string; label: string }[] }): Promise<ActionResult> {
   const sb = await signedIn();
   if (!sb) return expired;
   try {

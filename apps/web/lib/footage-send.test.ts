@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { FinishResult } from "./create-footage";
-import { retryLabel, sendFootage } from "./footage-send";
+import { forgetUploadsAfter, retryLabel, sendFootage, uploadAll } from "./footage-send";
 
 const steps = (finish: () => Promise<FinishResult>, upload: () => Promise<void> = async () => {}) => ({
   upload: vi.fn(upload), finish: vi.fn(finish), onUploaded: vi.fn(),
@@ -55,5 +55,39 @@ describe("sendFootage", () => {
     const o = await sendFootage(s, false);
     expect(o).toEqual({ kind: "failed", errors: ["The upload didn't finish. Upload the video again."], uploaded: false });
     expect(retryLabel(o)).toBe("Upload again");
+  });
+});
+
+describe("uploadAll", () => {
+  const items = [{ objectName: "a", size: 100 }, { objectName: "b", size: 300 }, { objectName: "c", size: 100 }];
+  it("never re-sends a finished file after an interruption, and reports progress by bytes", async () => {
+    const done = new Set<string>();
+    const sent: string[] = [];
+    const progress: number[] = [];
+    let failB = true;
+    const upload = async (item: { objectName: string }, onFraction: (f: number) => void) => {
+      sent.push(item.objectName);
+      onFraction(0.5);
+      if (item.objectName === "b" && failB) { failB = false; throw new Error("network down"); }
+    };
+    await expect(uploadAll(items, done, upload, (f) => progress.push(f))).rejects.toThrow("network down");
+    expect([...done]).toEqual(["a"]);
+    await uploadAll(items, done, upload, (f) => progress.push(f));
+    expect(sent).toEqual(["a", "b", "b", "c"]);
+    expect([...done]).toEqual(["a", "b", "c"]);
+    expect(progress.slice(0, 3)).toEqual([0.1, 0.2, 0.5]);
+    expect(progress.at(-1)).toBe(1);
+  });
+  it("after storage reports a missing file, Upload again sends the files again instead of skipping them", async () => {
+    const done = new Set(["a", "b", "c"]);
+    forgetUploadsAfter(done, { kind: "failed", errors: ["x"], uploaded: true });
+    expect([...done]).toEqual(["a", "b", "c"]);
+    forgetUploadsAfter(done, { kind: "interrupted", errors: ["x"] });
+    expect([...done]).toEqual(["a", "b", "c"]);
+    forgetUploadsAfter(done, { kind: "failed", errors: ['"demo" didn\'t finish uploading. Upload again.'], uploaded: false });
+    expect([...done]).toEqual([]);
+    const sent: string[] = [];
+    await uploadAll(items, done, async (item) => { sent.push(item.objectName); }, () => {});
+    expect(sent).toEqual(["a", "b", "c"]);
   });
 });

@@ -10,6 +10,7 @@ export function parseFootageSettings(fd: FormData): { ok: true; settings: Footag
     language: str("language"),
     targetDurationSec: Number(str("targetDurationSec")),
     ...(str("ctaKeyword") ? { ctaKeyword: str("ctaKeyword") } : {}),
+    ...(str("characterId") ? { characterId: str("characterId") } : {}),
     ...(str("notes") ? { notes: str("notes") } : {}),
   });
   return parsed.success

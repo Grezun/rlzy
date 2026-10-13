@@ -15,7 +15,7 @@ const deps = (over: Partial<FootageDeps> = {}): FootageDeps => ({
 describe("startFootage", () => {
   it("creates an uploading footage project and returns its storage path", async () => {
     const d = deps();
-    expect(await startFootage(d, { settings, fileName: "My Talk.MOV", size: 1000, durationSec: 95 })).toEqual({ ok: true, projectId: ID, storagePath: `footage/${ID}/source.mov` });
+    expect(await startFootage(d, { settings, fileName: "My Talk.MOV", size: 1000, durationSec: 95 })).toEqual({ ok: true, projectId: ID, storagePath: `footage/${ID}/source.mov`, extraPaths: [] });
     expect(d.insertProject).toHaveBeenCalledWith({ title: "My Talk", language: "he" });
   });
   it("re-checks the file on the server and creates nothing when it fails", async () => {
@@ -60,5 +60,29 @@ describe("finishFootage", () => {
     if (!r.ok) expect(r.errors.join(" ")).toMatch(message);
     // Only a job that already exists makes a retry pointless.
     if (!r.ok) expect(r.queued ?? false).toBe(/submitted|queued/.test(String(message)));
+  });
+});
+
+describe("extra files", () => {
+  const extras = [{ storagePath: `footage/${ID}/extra-1.png`, label: "צילום מסך" }, { storagePath: `footage/${ID}/extra-2.mov`, label: "demo" }];
+  it("checks the extras with the video and hands out their storage paths", async () => {
+    const d = deps();
+    expect(await startFootage(d, { settings, fileName: "a.mp4", size: 1000, durationSec: 10, extras: [{ name: "Shot.PNG", size: 10 }, { name: "demo.mov", size: 10 }] }))
+      .toEqual({ ok: true, projectId: ID, storagePath: `footage/${ID}/source.mp4`, extraPaths: [`footage/${ID}/extra-1.png`, `footage/${ID}/extra-2.mov`] });
+    const bad = await startFootage(d, { settings, fileName: "a.mp4", size: 1000, durationSec: 10, extras: [{ name: "IMG.HEIC", size: 10 }] });
+    expect(bad).toEqual({ ok: false, errors: ["IMG.HEIC: use a JPG, PNG or WEBP photo (convert HEIC to JPG first), or an MP4 or MOV clip."] });
+  });
+  it("queues ingest with the extras once every file is in storage", async () => {
+    const d = deps();
+    expect(await finishFootage(d, { projectId: ID, storagePath: `footage/${ID}/source.mov`, settings, extras })).toEqual({ ok: true });
+    expect(d.insertIngestJob).toHaveBeenCalledWith(ID, { storagePath: `footage/${ID}/source.mov`, settings, extras });
+  });
+  it("asks for an upload again when an extra is missing, and refuses another reel's extras", async () => {
+    const missing = deps({ objectExists: async (p: string) => !p.endsWith("extra-2.mov") });
+    expect(await finishFootage(missing, { projectId: ID, storagePath: `footage/${ID}/source.mov`, settings, extras }))
+      .toEqual({ ok: false, errors: ['"demo" didn\'t finish uploading. Upload again.'], uploadMissing: true });
+    const other = [{ storagePath: "footage/11111111-2222-4333-8444-555555555555/extra-1.png", label: "x" }];
+    expect(await finishFootage(deps(), { projectId: ID, storagePath: `footage/${ID}/source.mov`, settings, extras: other }))
+      .toEqual({ ok: false, errors: ["This upload doesn't belong to this reel."] });
   });
 });
