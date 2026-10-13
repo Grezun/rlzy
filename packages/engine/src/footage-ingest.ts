@@ -4,7 +4,7 @@ import { conformClip, conformPhoto, conformVideo, extractAudio, probe, sha256Fil
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import type * as z from "zod";
-import type { AssetStore, StoredAsset } from "./asset-store";
+import type { AssetMeta, AssetStore, StoredAsset } from "./asset-store";
 import type { FaceTracker } from "./face-tracker";
 import { cached, estUsd } from "./pipeline";
 import type { Transcriber } from "./providers/types";
@@ -96,34 +96,51 @@ export async function ingestFootage(originalPath: string, deps: IngestDeps, extr
 export async function ingestExtras(files: { path: string; label: string }[], deps: Pick<IngestDeps, "store" | "tmpDir" | "log">): Promise<{ extras: FootageExtra[]; warnings: string[] }> {
   const extras: FootageExtra[] = [];
   const warnings: string[] = [];
+  if (files.length) await mkdir(deps.tmpDir, { recursive: true });
   for (const [i, f] of files.entries()) {
     const ext = extname(f.path).slice(1).toLowerCase();
     const kind = ext === "mp4" || ext === "mov" ? "video" : "image";
+    const unreadable = `The extra file "${f.label}" couldn't be read, so it was left out.`;
     const info = await probe(f.path).catch(() => null);
     if (!info?.video?.width || (kind === "video" && !(info.video.durationSec > 0))) {
-      warnings.push(`The extra file "${f.label}" couldn't be read, so it was left out.`);
+      warnings.push(unreadable);
       continue;
     }
     const sha = await sha256File(f.path);
-    // Not `reproducible`: generation has no way to remake an extra, so a failed mirror must fail ingest (a retry is free)
-    // rather than leave the extra on this machine only.
-    const asset = await cached(deps.store, footageHashes.extra(sha, kind), async () => {
-      if (kind === "image") {
-        // Upright (EXIF orientation applied): probe reports a phone photo's raw size, Chrome shows it rotated.
-        const photoExt = ext === "jpg" || ext === "jpeg" ? "jpg" : "png";
-        const out = join(deps.tmpDir, `extra-${i + 1}.${photoExt}`);
-        await conformPhoto(f.path, out);
-        return { path: out, ext: photoExt, meta: { kind: "image", provider: "ffmpeg", extra: { sha } } };
+    const hash = footageHashes.extra(sha, kind);
+    // A file can probe fine yet fail to convert (corrupted body): leave it out, or a retry would fail the same way forever.
+    let made: { path: string; ext: string; meta: Omit<AssetMeta, "createdAt"> } | null = null;
+    if (!(await deps.store.get(hash))) {
+      try {
+        if (kind === "image") {
+          // Upright (EXIF orientation applied): probe reports a phone photo's raw size, Chrome shows it rotated.
+          const photoExt = ext === "jpg" || ext === "jpeg" ? "jpg" : "png";
+          const out = join(deps.tmpDir, `extra-${i + 1}.${photoExt}`);
+          await conformPhoto(f.path, out);
+          made = { path: out, ext: photoExt, meta: { kind: "image", provider: "ffmpeg", extra: { sha } } };
+        } else {
+          deps.log(`ingest: fitting extra clip ${i + 1}`);
+          const out = join(deps.tmpDir, `extra-${i + 1}.mp4`);
+          await conformClip(f.path, out);
+          made = { path: out, ext: "mp4", meta: { kind: "video", provider: "ffmpeg", extra: { sha } } };
+        }
+      } catch (err) {
+        deps.log(`ingest: extra ${i + 1} couldn't be converted: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}`);
+        warnings.push(unreadable);
+        continue;
       }
-      deps.log(`ingest: fitting extra clip ${i + 1}`);
-      const out = join(deps.tmpDir, `extra-${i + 1}.mp4`);
-      await conformClip(f.path, out);
-      return { path: out, ext: "mp4", meta: { kind: "video", provider: "ffmpeg", extra: { sha } } };
-    });
-    const stored = await probe(asset.path);
+    }
+    // Not `reproducible`: generation has no way to remake an extra, so a failed mirror must fail ingest (a retry is free)
+    // rather than leave the extra on this machine only. Storage errors are deliberately not caught here.
+    const asset = await cached(deps.store, hash, async () => made!);
+    const stored = await probe(asset.path).catch(() => null);
+    if (!stored?.video?.width) {
+      warnings.push(unreadable);
+      continue;
+    }
     extras.push({
-      assetId: asset.hash, kind, width: stored.video!.width, height: stored.video!.height,
-      durationMs: kind === "video" ? Math.round(stored.video!.durationSec * 1000) : 0, label: f.label,
+      assetId: asset.hash, kind, width: stored.video.width, height: stored.video.height,
+      durationMs: kind === "video" ? Math.round(stored.video.durationSec * 1000) : 0, label: f.label,
     });
   }
   return { extras, warnings };

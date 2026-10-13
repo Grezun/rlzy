@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { FileAssetStore } from "./asset-store";
 import { createFaceTracker, noFaceTracker, visionFaceTracker } from "./face-tracker";
-import { footageHashes, ingestFootage, loadFootageInputs } from "./footage-ingest";
+import { footageHashes, ingestExtras, ingestFootage, loadFootageInputs } from "./footage-ingest";
 import { createFakeProviders } from "./providers/fake";
 
 async function setup() {
@@ -214,4 +214,22 @@ describe("ingest extras", () => {
     expect((await deps.store.get(source.extras[2].assetId))!.fileName).toMatch(/\.jpg$/);
     expect(warnings).toEqual(['The extra file "bad" couldn\'t be read, so it was left out.']);
   }, 300_000);
+
+  it("leaves out a file that probes fine but ffmpeg can't convert (corrupted body), keeping the other extras", async () => {
+    const { dir, deps } = await setup();
+    await makeTestImage(join(dir, "good.png"), { width: 400, height: 300 });
+    await makeTestImage(join(dir, "src.png"), { width: 400, height: 300 });
+    // Valid PNG header (probe reads 400×300), every byte after the image data header scrambled: decoding fails.
+    const png = await readFile(join(dir, "src.png"));
+    const idat = png.indexOf("IDAT");
+    for (let k = idat + 8; k < png.length - 20; k++) png[k] = 0x55;
+    await writeFile(join(dir, "broken.png"), png);
+    expect((await probe(join(dir, "broken.png"))).video?.width).toBe(400);
+    const { extras, warnings } = await ingestExtras([
+      { path: join(dir, "broken.png"), label: "broken" },
+      { path: join(dir, "good.png"), label: "good" },
+    ], deps);
+    expect(extras.map((e) => e.label)).toEqual(["good"]);
+    expect(warnings).toEqual(['The extra file "broken" couldn\'t be read, so it was left out.']);
+  }, 120_000);
 });

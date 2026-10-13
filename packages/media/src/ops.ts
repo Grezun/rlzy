@@ -19,12 +19,18 @@ export async function conformClip(input: string, output: string, maxSec = 10): P
   await runFfmpeg(["-i", input, "-t", String(maxSec), "-vf", vf, ...H264, "-an", "-movflags", "+faststart", output]);
 }
 
+/** Long side of an extra photo: 2× the reel's 1080 width is plenty for a Ken Burns push, and keeps renders light. */
+export const PHOTO_MAX_SIDE = 2160;
+
 /**
  * Extra photos: re-encoded upright. ffmpeg applies the EXIF orientation when decoding (ffprobe reports the raw,
  * unrotated size), and the output carries no orientation tag, so its probed size is the size the reel shows.
+ * Large photos are scaled down (after the rotation) so the long side is at most PHOTO_MAX_SIDE; never upscaled.
  */
 export async function conformPhoto(input: string, output: string): Promise<void> {
-  await runFfmpeg(["-i", input, "-frames:v", "1", ...(output.endsWith(".jpg") ? ["-q:v", "2"] : []), output]);
+  const m = PHOTO_MAX_SIDE;
+  const vf = `scale=w='min(${m},iw)':h='min(${m},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`;
+  await runFfmpeg(["-i", input, "-vf", vf, "-frames:v", "1", ...(output.endsWith(".jpg") ? ["-q:v", "2"] : []), output]);
 }
 
 export async function fitDuration(input: string, output: string, targetSec: number): Promise<void> {

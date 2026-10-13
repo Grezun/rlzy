@@ -122,4 +122,18 @@ describe("conformPhoto", () => {
     await conformPhoto(wide, join(dir, "plain.jpg"));
     expect((await probe(join(dir, "plain.jpg"))).video).toMatchObject({ width: 400, height: 300 });
   }, 60_000);
+  it("downsizes a large photo so its long side is 2160 px (even sizes), after the rotation, and never upscales", async () => {
+    const big = join(dir, "big.jpg");
+    await makeTestImage(big, { width: 3000, height: 2000 });
+    await conformPhoto(big, join(dir, "big-out.jpg"));
+    expect((await probe(join(dir, "big-out.jpg"))).video).toMatchObject({ width: 2160, height: 1440 });
+    const tall = join(dir, "tall.jpg");
+    await addExifOrientation(big, tall, 6); // a phone photo: 3000×2000 raw, shown 2000×3000
+    await conformPhoto(tall, join(dir, "tall-out.png"));
+    expect((await probe(join(dir, "tall-out.png"))).video).toMatchObject({ width: 1440, height: 2160 });
+    const small = join(dir, "small.png");
+    await makeTestImage(small, { width: 640, height: 480 });
+    await conformPhoto(small, join(dir, "small-out.png"));
+    expect((await probe(join(dir, "small-out.png"))).video).toMatchObject({ width: 640, height: 480 });
+  }, 60_000);
 });
