@@ -21,7 +21,7 @@ const FAKE_SCRIPTS = {
 
 /** Deterministic, free providers backed by lavfi fixtures, for tests and `--fake` runs. */
 export function createFakeProviders(opts: { workDir: string; failPromptsContaining?: string }) {
-  const calls = { image: 0, video: 0, upload: 0, voice: 0, plan: 0, transcribe: 0, music: 0 };
+  const calls = { image: 0, selfImage: 0, video: 0, upload: 0, voice: 0, plan: 0, transcribe: 0, music: 0 };
   let n = 0;
   const nextFile = (ext: string) => join(opts.workDir, `fake-${++n}.${ext}`);
 
@@ -29,8 +29,9 @@ export function createFakeProviders(opts: { workDir: string; failPromptsContaini
     calls,
     image: {
       model: "fake/image",
-      async generate({ prompt }) {
+      async generate({ prompt, character }) {
         calls.image++;
+        if (character) calls.selfImage++;
         if (opts.failPromptsContaining && prompt.includes(opts.failPromptsContaining)) {
           throw new PermanentProviderError("Higgsfield (fake) was blocked by content moderation", "fake", "fake-req");
         }

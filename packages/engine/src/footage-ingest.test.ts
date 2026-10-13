@@ -179,3 +179,14 @@ describe("ingestFootage (real ffmpeg, fake Scribe, no face helper)", () => {
     await expect(loadFootageInputs(deps.store, source, { ...remake, original: async () => null })).rejects.toThrow(/Upload the video again/);
   }, 300_000);
 });
+
+describe("cutaway cache keys", () => {
+  it("separate fake and real models, characters, strengths and fit lengths", () => {
+    const a = footageHashes.selfImage("higgsfield-ai/soul/v2/standard", "p", "ref-1", 1);
+    expect(footageHashes.selfImage("fake/image", "p", "ref-1", 1)).not.toBe(a);
+    expect(footageHashes.selfImage("higgsfield-ai/soul/v2/standard", "p", "ref-2", 1)).not.toBe(a);
+    expect(footageHashes.selfImage("higgsfield-ai/soul/v2/standard", "p", "ref-1", 0.8)).not.toBe(a);
+    expect(footageHashes.cutawayFit("x".repeat(64), 2000)).not.toBe(footageHashes.cutawayFit("x".repeat(64), 2033));
+    expect(footageHashes.extra("y".repeat(64), "image")).not.toBe(footageHashes.extra("y".repeat(64), "video"));
+  });
+});

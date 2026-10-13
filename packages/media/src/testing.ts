@@ -1,4 +1,4 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { runFfmpeg } from "./run";
 
@@ -48,4 +48,25 @@ export async function averageLuma(image: string): Promise<number> {
   const match = stderr.match(/lavfi\.signalstats\.YAVG=([\d.]+)/);
   if (!match) throw new Error(`no YAVG in ffmpeg output for ${image}`);
   return Number(match[1]);
+}
+
+/** Copies a JPEG with an EXIF orientation tag added (6 = a portrait phone photo stored landscape). Tests only. */
+export async function addExifOrientation(input: string, output: string, orientation: number): Promise<void> {
+  const jpeg = await readFile(input);
+  // Big-endian TIFF: header (8 bytes), one IFD with one entry (Orientation, SHORT, count 1), then "no next IFD".
+  const tiff = Buffer.alloc(26);
+  tiff.write("MM\0*", 0, "latin1");
+  tiff.writeUInt32BE(8, 4);
+  tiff.writeUInt16BE(1, 8);
+  tiff.writeUInt16BE(0x0112, 10);
+  tiff.writeUInt16BE(3, 12);
+  tiff.writeUInt32BE(1, 14);
+  tiff.writeUInt16BE(orientation, 18);
+  tiff.writeUInt32BE(0, 22);
+  const payload = Buffer.concat([Buffer.from("Exif\0\0", "latin1"), tiff]);
+  const app1 = Buffer.alloc(4);
+  app1.writeUInt16BE(0xffe1, 0);
+  app1.writeUInt16BE(payload.length + 2, 2);
+  // Right after the SOI marker (the first 2 bytes).
+  await writeFile(output, Buffer.concat([jpeg.subarray(0, 2), app1, payload, jpeg.subarray(2)]));
 }

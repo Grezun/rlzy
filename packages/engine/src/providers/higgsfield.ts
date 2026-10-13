@@ -3,7 +3,7 @@ import { FETCH_TIMEOUT_MS } from "../download";
 import type { PendingStore } from "../pending-store";
 import { Semaphore, withRetry } from "../retry";
 import { AmbiguousSubmitError, HfHttpError, isNetworkError, isAmbiguousSubmitError, isRetryableSubmitError, type HfStatus, type HiggsfieldApi } from "./higgsfield-api";
-import type { GenResult, ImageGen, MediaUploader, VideoGen } from "./types";
+import type { GenResult, ImageGen, MediaUploader, SoulReference, VideoGen } from "./types";
 
 const TERMINAL = new Set(["completed", "failed", "nsfw", "canceled", "cancelled"]);
 export const IMAGE_MAX_WAIT_MS = 10 * 60 * 1000;
@@ -136,8 +136,13 @@ export class HiggsfieldGateway {
 
 export class HiggsfieldImageGen implements ImageGen {
   constructor(private readonly gateway: HiggsfieldGateway, readonly model = "higgsfield-ai/soul/v2/standard") {}
-  generate({ prompt, resumeKey }: { prompt: string; resumeKey?: string }): Promise<GenResult> {
-    return this.gateway.run(this.model, { prompt, aspect_ratio: "9:16", resolution: "1080p", batch_size: 1 }, (r) => r.images?.[0]?.url, { resumeKey, maxWaitMs: IMAGE_MAX_WAIT_MS });
+  generate({ prompt, resumeKey, character }: { prompt: string; resumeKey?: string; character?: SoulReference }): Promise<GenResult> {
+    const input = {
+      prompt, aspect_ratio: "9:16", resolution: "1080p", batch_size: 1,
+      // The Soul character fields @higgsfield/client documents for Soul generation; checked in the plan-2 paid smoke test.
+      ...(character ? { custom_reference_id: character.referenceId, custom_reference_strength: character.strength } : {}),
+    };
+    return this.gateway.run(this.model, input, (r) => r.images?.[0]?.url, { resumeKey, maxWaitMs: IMAGE_MAX_WAIT_MS });
   }
 }
 

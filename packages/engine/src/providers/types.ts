@@ -2,9 +2,13 @@ import type { Language, Storyboard, Transcript, Word } from "@reel/core";
 
 export type GenResult = { url: string; requestId: string };
 
+/** A trained Soul ID character (spec §4.4 ai_self): Higgsfield's custom reference id and how strongly to follow it. */
+export type SoulReference = { referenceId: string; strength: number };
+export const SOUL_REFERENCE_STRENGTH = 1;
+
 export interface ImageGen {
   readonly model: string;
-  generate(req: { prompt: string; resumeKey?: string }): Promise<GenResult>;
+  generate(req: { prompt: string; resumeKey?: string; character?: SoulReference }): Promise<GenResult>;
 }
 
 export interface VideoGen {

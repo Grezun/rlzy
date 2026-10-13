@@ -26,6 +26,9 @@ export const footageHashes = {
   musicFit: (trackSha: string, durationMs: number) => inputHash({ step: "music-fit", v: 1, trackSha, durationMs }),
   musicAi: (model: string, prompt: string, durationMs: number) => inputHash({ step: "music-ai", v: 1, model, prompt, durationMs }),
   sfx: (fileSha: string) => inputHash({ step: "sfx", v: 1, fileSha }),
+  extra: (sha: string, kind: "image" | "video") => inputHash({ step: "footage-extra", v: 1, sha, kind }),
+  selfImage: (model: string, prompt: string, referenceId: string, strength: number) => inputHash({ step: "self-image", v: 1, model, prompt, referenceId, strength }),
+  cutawayFit: (rawHash: string, durationMs: number) => inputHash({ step: "cutaway-fit", v: 1, rawHash, durationMs }),
 };
 
 export type IngestDeps = { store: AssetStore; transcriber: Transcriber; faceTracker: FaceTracker; tmpDir: string; log: (m: string) => void; onEvent?: (e: PipelineEvent) => void };

@@ -13,6 +13,20 @@ export async function conformVideo(input: string, output: string, opts: { keepAu
   ]);
 }
 
+/** Extra uploads: fit inside 1080×1920 keeping the whole picture (Remotion fits it to its slot), 30 fps, no audio, first maxSec only. */
+export async function conformClip(input: string, output: string, maxSec = 10): Promise<void> {
+  const vf = "scale=w=1080:h=1920:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=30,setsar=1,format=yuv420p";
+  await runFfmpeg(["-i", input, "-t", String(maxSec), "-vf", vf, ...H264, "-an", "-movflags", "+faststart", output]);
+}
+
+/**
+ * Extra photos: re-encoded upright. ffmpeg applies the EXIF orientation when decoding (ffprobe reports the raw,
+ * unrotated size), and the output carries no orientation tag, so its probed size is the size the reel shows.
+ */
+export async function conformPhoto(input: string, output: string): Promise<void> {
+  await runFfmpeg(["-i", input, "-frames:v", "1", ...(output.endsWith(".jpg") ? ["-q:v", "2"] : []), output]);
+}
+
 export async function fitDuration(input: string, output: string, targetSec: number): Promise<void> {
   if (!(targetSec > 0)) throw new RangeError(`targetSec must be > 0, got ${targetSec}`);
   const { durationSec } = await probe(input);

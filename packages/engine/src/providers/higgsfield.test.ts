@@ -24,6 +24,14 @@ const make = (api: HiggsfieldApi, pending = new MemoryPendingStore(), concurrenc
   new HiggsfieldGateway(api, pending, concurrency, { sleep: noSleep, ...opts });
 
 describe("HiggsfieldImageGen", () => {
+  it("adds the Soul ID reference for AI shots of the user, and only then", async () => {
+    const { api, inputs } = fakeApi({ statuses: { "req-1": [completedImg()], "req-2": [completedImg("req-2")] }, submit: [async () => "req-1", async () => "req-2"] });
+    const gen = new HiggsfieldImageGen(make(api));
+    await gen.generate({ prompt: "on a plane", character: { referenceId: "soul-ref-123", strength: 1 } });
+    await gen.generate({ prompt: "a laptop" });
+    expect(inputs[0].input).toEqual({ prompt: "on a plane", aspect_ratio: "9:16", resolution: "1080p", batch_size: 1, custom_reference_id: "soul-ref-123", custom_reference_strength: 1 });
+    expect(inputs[1].input).toEqual({ prompt: "a laptop", aspect_ratio: "9:16", resolution: "1080p", batch_size: 1 });
+  });
   it("submits a single 9:16 1080p image, polls, and returns url + request id", async () => {
     const { api, calls, inputs } = fakeApi({ statuses: { "req-1": [inProgress, completedImg()] } });
     const pending = new MemoryPendingStore();

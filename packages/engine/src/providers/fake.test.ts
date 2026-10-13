@@ -42,3 +42,13 @@ describe("fake footage providers", () => {
     expect(p.calls.plan).toBe(1);
   });
 });
+
+describe("fake self stills", () => {
+  it("counts fake stills made with a character", async () => {
+    const p = createFakeProviders({ workDir: await mkdtemp(join(tmpdir(), "fake-self-")) });
+    await p.image.generate({ prompt: "on a plane", character: { referenceId: "soul-ref-123", strength: 1 } });
+    await p.image.generate({ prompt: "a laptop" });
+    expect(p.calls.image).toBe(2);
+    expect(p.calls.selfImage).toBe(1);
+  });
+});
