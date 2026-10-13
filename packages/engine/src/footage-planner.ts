@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import {
-  CALLOUT_MAX_CHARS, CalloutSchema, EditPlanDraftSchema, LENGTH_TOLERANCE, applyCalloutBudget, applyCutawayBudget, calloutBudget, cutawayBudget, moveCoveredCallouts, parseEditPlan, plural, splitBeats, withFootageEstimate,
+  BACKGROUND_PROMPT_MAX, CALLOUT_MAX_CHARS, CalloutSchema, EditPlanDraftSchema, LENGTH_TOLERANCE, applyCalloutBudget, applyCutawayBudget, calloutBudget, cutawayBudget, moveCoveredCallouts, parseEditPlan, plural, splitBeats, withFootageEstimate,
   type BeatSpan, type Cutaway, type DraftCutaway, type EditPlan, type EditPlanDraft, type EditStyle, type FootageExtra, type FootageSettings, type FootageSource, type MusicMood, type Transcript,
 } from "@reel/core";
 
@@ -63,6 +63,7 @@ export function footageSystemPrompt(): string {
     '- ending: "cta" when there is a comment keyword (the user gave one, or the speaker asks viewers to comment a word: put that word in keyword); "loop" when the last line can flow back into the first; otherwise "none".',
     '- music: a library track whose mood fits (kind "library", trackId); "ai" with a short English instrumental prompt (genre, mood, tempo) only when no library track fits; "none" for serious or emotional talks.',
     '- sfx: "subtle" by default, "lively" for energetic tips, "off" for serious topics.',
+    '- background: "replace" when the user prompt says the speaker is cut out: they then stand in front of one AI-generated scene that fits the topic, softly blurred behind them for the whole reel. prompt: one English sentence describing an empty place with depth (setting, light, mood), e.g. "a bright minimalist home office with plants and a large window, morning light"; never people, text, screens with words or logos. Use "original" (prompt empty) when the real setting is part of the message (the speaker shows a product, a place or a person around them), when the user\'s notes ask for it, or when no cut-out is available. On a re-plan, keep the previous background unless the user\'s change asks otherwise.',
     "- dropReason: for every dropped beat, a short English reason (\"retake of b4\", \"false start\", \"tangent\").",
     "- cutaway: at most one per beat, and none on a beat with a callout. Use the cutaway budget: plan close to its maximum (about one cutaway every 3 seconds of the finished reel), spread evenly over the kept beats, and use the video clips it allows on the most visual moments. Show what the words talk about; 1–2 s is typical (durationMs 1000–3000), starting atMs after the beat starts, counted after pauses are cut; keep atMs + durationMs inside the beat.",
     '  - "ai_broll": a concrete thing or action the beat names. prompt: one English sentence for a realistic photo (subject, setting, light); never text, screens with words, or logos. media "video" only when the motion matters, otherwise "image".',
@@ -91,6 +92,15 @@ function uploadLines(extras: FootageExtra[]): string[] {
   ];
 }
 
+function backgroundLine(req: FootagePlanRequest): string {
+  return req.source.matteAssetId
+    ? 'Background: the speaker is cut out, so you can put an AI scene behind them (background "replace" with a prompt) or keep their real background ("original").'
+    : 'Background: keep "original" (this video has no cut-out of the speaker).';
+}
+
+const describeBackground = (b: EditPlan["background"]) =>
+  b.mode === "replace" && b.sections[0]?.source.kind === "ai" ? `AI scene "${b.sections[0].source.prompt}"` : "original";
+
 export function footageUserPrompt(req: FootagePlanRequest, beats: BeatSpan[]): string {
   const w = req.transcript.words;
   const speechMs = beats.reduce((s, b) => s + (w[b.endWordIdx].endMs - w[b.startWordIdx].startMs), 0);
@@ -100,7 +110,7 @@ export function footageUserPrompt(req: FootagePlanRequest, beats: BeatSpan[]): s
       ? `Comment keyword from the user: "${req.settings.ctaKeyword}" (use ending "cta").`
       : 'No comment keyword was given: use "cta" only if the speaker asks viewers to comment a specific word, and put that word in ending.keyword.',
     ...(req.settings.notes ? [`Notes from the user: ${req.settings.notes}`] : []),
-    "Background replacement is not available in this version: never mention it.",
+    backgroundLine(req),
     cutawayBudgetLine(req),
     `Callout budget: at most ${plural(calloutBudget(req.settings.targetDurationSec), "callout", "callouts")}.`,
     ...uploadLines(req.source.extras),
@@ -114,7 +124,7 @@ export function footageUserPrompt(req: FootagePlanRequest, beats: BeatSpan[]): s
     const p = req.previous;
     const kept = p.beats.filter((b) => b.keep).map((b) => b.id).join(", ") || "none";
     const dropped = p.beats.filter((b) => !b.keep).map((b) => (b.dropReason ? `${b.id} (${b.dropReason})` : b.id)).join(", ") || "none";
-    lines.push("", `Your previous plan: kept ${kept}; dropped ${dropped}. Hook: ${p.hook.reason || p.hook.patternBreak}.`);
+    lines.push("", `Your previous plan: kept ${kept}; dropped ${dropped}. Hook: ${p.hook.reason || p.hook.patternBreak}. Background: ${describeBackground(p.background)}.`);
   }
   if (req.instruction) lines.push(`The user asked for this change: ${req.instruction}`);
   return lines.join("\n");
@@ -174,6 +184,13 @@ export function buildEditPlan(draft: EditPlanDraft, req: FootagePlanRequest, bea
   const brollLeft = withCallouts.beats.some((b) => b.keep && b.cutaway);
   const brollLost = draft.hook.patternBreak === "broll" && !brollLeft;
   const patternBreak = brollLost ? "zoom_hit" : draft.hook.patternBreak;
+  // Code owns whether a scene is possible: without a cut-out the reel keeps its real background (ingest already warned why).
+  const scene = draft.background.prompt.trim().slice(0, BACKGROUND_PROMPT_MAX);
+  const wantsScene = draft.background.mode === "replace" && !!req.source.matteAssetId;
+  const background = wantsScene && scene
+    ? { mode: "replace", sections: [{ fromBeatId: beats[0].id, source: { kind: "ai", prompt: scene } }] }
+    : { mode: "original" };
+  const backgroundWarnings = wantsScene && !scene ? ["The AI background had no scene description, so the reel keeps your real background."] : [];
   const plan = {
     format: "footage",
     version: 1,
@@ -192,12 +209,12 @@ export function buildEditPlan(draft: EditPlanDraft, req: FootagePlanRequest, bea
     ending: req.settings.ctaKeyword
       ? { kind: "cta", keyword: req.settings.ctaKeyword }
       : draft.ending.kind === "cta" ? { kind: "cta", keyword: draft.ending.keyword.trim() } : { kind: draft.ending.kind },
-    background: { mode: "original" },
+    background,
     music: m.kind === "library" ? { kind: "library", assetId: m.trackId } : m.kind === "ai" ? { kind: "ai", prompt: m.prompt.trim() } : { kind: "none" },
     sfx: draft.sfx,
     estimate: { durationSec: 0, credits: 0 },
     ...(req.character ? { character: req.character } : {}),
-    warnings: [...req.warnings, ...budgeted.warnings, ...calloutWarnings, ...withCallouts.warnings, ...(brollLost ? ["The B-roll opening had no cutaway left, so it became a zoom hit."] : [])],
+    warnings: [...req.warnings, ...budgeted.warnings, ...calloutWarnings, ...withCallouts.warnings, ...(brollLost ? ["The B-roll opening had no cutaway left, so it became a zoom hit."] : []), ...backgroundWarnings],
   };
   const moved = moveCoveredCallouts(parseEditPlan(plan), req.transcript.words, style);
   return withFootageEstimate({ ...moved.plan, warnings: [...moved.plan.warnings, ...moved.warnings] }, req.transcript.words, style);

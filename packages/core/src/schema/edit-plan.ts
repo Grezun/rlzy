@@ -188,6 +188,7 @@ export const NO_CUTAWAY: DraftCutaway = { kind: "none", media: "image", prompt: 
  * What Claude writes. Free of min/max constraints (structured outputs don't enforce them); empty strings and -1 mean
  * "none" (callout: "" for none). emphasisWordIdx is a plain number (z.number().int() would emit safe-integer bounds); parseEditPlan checks it
  * is an integer. uploadId is the x1…x6 id from the prompt; code maps it to the asset. Code fills in the beat spans, source, estimate and warnings, then validates with parseEditPlan.
+ * background.prompt is the AI scene for "replace" ("" for "original"); code keeps "original" when the video has no cut-out.
  */
 export const EditPlanDraftSchema = z.object({
   title: z.string(),
@@ -201,6 +202,7 @@ export const EditPlanDraftSchema = z.object({
   }),
   ending: z.object({ kind: z.enum(["cta", "loop", "none"]), keyword: z.string() }),
   music: z.object({ kind: z.enum(["library", "ai", "none"]), trackId: z.string(), prompt: z.string() }),
+  background: z.object({ mode: z.enum(["original", "replace"]), prompt: z.string() }),
   sfx: SfxLevelSchema,
 });
 export type EditPlanDraft = z.infer<typeof EditPlanDraftSchema>;

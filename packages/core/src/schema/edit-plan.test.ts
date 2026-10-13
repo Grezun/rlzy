@@ -73,11 +73,13 @@ describe("Claude's draft schema", () => {
   it("offers a callout per beat", () => {
     expect(JSON.stringify(EditPlanDraftSchema.toJSONSchema())).toMatch(/"callout"/);
   });
-  it("offers cutaways and the B-roll break but never background replacement", () => {
+  it("offers cutaways, the B-roll break and a background choice (never brand backdrops)", () => {
     const json = JSON.stringify(EditPlanDraftSchema.toJSONSchema());
     expect(json).toMatch(/cutaway/);
     expect(json).toMatch(/broll/);
-    expect(json).not.toMatch(/background/);
+    expect(json).toMatch(/"background"/);
+    expect(json).toMatch(/"replace"/);
+    expect(json).not.toMatch(/brand/);
   });
   it("sends Claude a draft schema without min/max bounds", () => {
     expect(JSON.stringify(EditPlanDraftSchema.toJSONSchema())).not.toMatch(/minimum|maximum|minLength|maxLength|minItems|maxItems/);
