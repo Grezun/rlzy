@@ -194,18 +194,26 @@ function cutawayMedia(c: PlacedCutaway, plan: EditPlan, assets: FootageAssets, s
   return a.kind === "image" ? { kind: "image", src: a.src, fit, kenBurns: style.cutaways.kenBurns } : { kind: "video", src: a.src, fit };
 }
 
-/** The zoom a clip has reached `offset` frames in, as a fresh crop for the piece that continues from there. */
-function cropFrom(crop: TimelineCrop, offset: number, frames: number): TimelineCrop {
+/**
+ * The crop for a piece covering frames offset..offset+len-1 of a clip that is `frames` long: the clip's zoom
+ * (linear over frames - 1, or over punchFrames then held) sampled at the piece's first and last frame, so the zoom
+ * is continuous across pieces and no piece squeezes the whole push-in into its shorter length.
+ */
+function pieceCrop(crop: TimelineCrop, offset: number, len: number, frames: number): TimelineCrop {
+  if (offset === 0 && len === frames) return crop;
   const { punchFrames, ...rest } = crop;
   const span = punchFrames ?? Math.max(1, frames - 1);
-  const scaleFrom = r4(crop.scaleFrom + (crop.scaleTo - crop.scaleFrom) * Math.min(1, offset / span));
-  if (punchFrames) return offset >= punchFrames ? { ...rest, scaleFrom: crop.scaleTo } : { ...rest, scaleFrom, punchFrames: punchFrames - offset };
-  return { ...rest, scaleFrom };
+  const at = (t: number) => r4(crop.scaleFrom + (crop.scaleTo - crop.scaleFrom) * Math.min(1, t / span));
+  const scaleFrom = at(offset);
+  const scaleTo = offset + len === frames ? crop.scaleTo : at(offset + len - 1);
+  if (!punchFrames) return { ...rest, scaleFrom, scaleTo };
+  const left = punchFrames - offset;
+  return left <= 0 ? { ...rest, scaleFrom: crop.scaleTo, scaleTo: crop.scaleTo } : { ...rest, scaleFrom, scaleTo, punchFrames: Math.min(left, Math.max(1, len - 1)) };
 }
 
 /**
  * Cuts speaker clips at split-cutaway boundaries. Pieces under a split cutaway play in the bottom half (layout "split"),
- * cropped 9:8 around the face at scale 1; the other pieces continue the clip's zoom. Source spans continue frame-exactly.
+ * cropped 9:8 around the face at scale 1; the other pieces take the clip's zoom over their own span (continuous across pieces). Source spans continue frame-exactly.
  */
 function splitForCutaways(clips: TimelineClip[], faces: (FaceBox | null)[], splits: PlacedCutaway[]): { clips: TimelineClip[]; faces: (FaceBox | null)[] } {
   if (!splits.length) return { clips, faces };
@@ -235,8 +243,8 @@ function splitForCutaways(clips: TimelineClip[], faces: (FaceBox | null)[], spli
         delete piece.enter;
         piece.layout = "split";
         piece.crop = { cx: 0.5, cy: face ? r4(Math.min(0.75, Math.max(0.25, face.y + face.h / 2))) : 0.5, scaleFrom: 1, scaleTo: 1 };
-      } else if (offset > 0) {
-        piece.crop = cropFrom(clip.crop!, offset, clip.durationInFrames);
+      } else {
+        piece.crop = pieceCrop(clip.crop!, offset, len, clip.durationInFrames);
       }
       outClips.push(piece);
       outFaces.push(face);

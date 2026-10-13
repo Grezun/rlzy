@@ -259,4 +259,16 @@ describe("cutaways", () => {
     expect(out.timeline.cutaways![0].media).toMatchObject({ kind: "image", fit: "contain_blur" });
     expect(out.timeline.cutaways!.map((c) => c.id)).toEqual(["b1"]); // b3 ran under the CTA card
   });
+
+  it("zoom stays continuous across the pieces of a clip cut by a split partway in", () => {
+    const run = (cutaway?: unknown) => compileFootage(plan({ beats: validEditPlan().beats.map((b) => (cutaway && b.id === "b1" ? { ...b, cutaway } : b)) as EditPlan["beats"], ending: { kind: "none" } }), transcript, faceTrackFixture(), withArt, style).timeline.clips;
+    const base = run().find((c) => c.sceneId === "b1-2")!; // frames 26–89, pushes in
+    const at = (t: number) => base.crop!.scaleFrom + (base.crop!.scaleTo - base.crop!.scaleFrom) * (t / (base.durationInFrames - 1));
+    const pieces = run(still("split", 1000, 1000)).filter((c) => c.sceneId.startsWith("b1-2")); // split at frames 30–60
+    expect(pieces.map((c) => [c.sceneId, c.fromFrame, c.durationInFrames, c.layout])).toEqual([["b1-2", 26, 4, undefined], ["b1-2.2", 30, 30, "split"], ["b1-2.3", 60, 29, undefined]]);
+    expect(pieces[0].crop!.scaleFrom).toBeCloseTo(at(0), 3);
+    expect(pieces[0].crop!.scaleTo).toBeCloseTo(at(3), 3); // not squeezed up to 1.242
+    expect(pieces[2].crop!.scaleFrom).toBeCloseTo(at(34), 3);
+    expect(pieces[2].crop!.scaleTo).toBeCloseTo(base.crop!.scaleTo, 3);
+  });
 });
