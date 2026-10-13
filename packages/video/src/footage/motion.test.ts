@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ctaLines, popIn, revealedCount, speakerTransform } from "./motion";
+import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, revealedCount, speakerTransform, visiblePages, wordPop } from "./motion";
 
 describe("speakerTransform", () => {
   const punch = { cx: 0.5, cy: 0.4, scaleFrom: 1, scaleTo: 1.3, punchFrames: 6 };
@@ -48,5 +48,50 @@ describe("caption, headline and CTA helpers", () => {
   it("words the CTA per language", () => {
     expect(ctaLines("AI", "he")).toEqual({ before: "תכתבו", keyword: "'AI'", after: "בתגובות" });
     expect(ctaLines("AI", "en")).toEqual({ before: "Comment", keyword: "'AI'", after: "" });
+  });
+});
+
+describe("caption visibility under the headline and the CTA card", () => {
+  it("cuts the hidden ranges out of each page and drops what is left under 8 frames", () => {
+    const pages = [{ fromFrame: 0, durationInFrames: 30 }, { fromFrame: 50, durationInFrames: 30 }, { fromFrame: 58, durationInFrames: 6 }, { fromFrame: 80, durationInFrames: 20 }, { fromFrame: 100, durationInFrames: 40 }];
+    expect(visiblePages(pages, [[0, 60], [120, 140]], 8).map((p) => [p.fromFrame, p.durationInFrames])).toEqual([[60, 20], [80, 20], [100, 20]]);
+  });
+});
+
+describe("word, page and emoji pops", () => {
+  it("finds the word being spoken", () => {
+    const words = [{ startFrame: 10 }, { startFrame: 20 }, { startFrame: 30 }];
+    expect([5, 10, 25, 99].map((f) => activeWordIndex(words, f))).toEqual([-1, 0, 1, 2]);
+    expect(activeWordIndex([{}, {}], 50)).toBe(-1);
+  });
+  it("pops the active word from 1.12 back to 1 over 3 frames", () => {
+    expect(wordPop(0, 3, 1.12)).toBeCloseTo(1.12);
+    expect(wordPop(3, 3, 1.12)).toBeCloseTo(1);
+  });
+  it("bounces pages in from 80 % with a small overshoot", () => {
+    expect(popBounce(0, 6, 0.8)).toBeCloseTo(0.8);
+    expect(Math.max(...[1, 2, 3, 4, 5].map((f) => popBounce(f, 6, 0.8)))).toBeGreaterThan(1);
+    expect(popBounce(6, 6, 0.8)).toBeCloseTo(1);
+  });
+  it("pops emoji 0 → 1.35 → 1 over 8 frames", () => {
+    expect(emojiScale(-1, 8, 1.35)).toBe(0);
+    expect(emojiScale(0, 8, 1.35)).toBe(0);
+    expect(emojiScale(5, 8, 1.35)).toBeGreaterThan(1.25);
+    expect(emojiScale(8, 8, 1.35)).toBe(1);
+  });
+});
+
+describe("clip entries", () => {
+  const m = { snapScale: 1.06, zoomBlurScale: 1.22, zoomBlurPx: 16 };
+  it("snaps 1.06 → 1 and zoom-blurs 1.22 / 16 px → 1 / 0", () => {
+    expect(enterEffect({ kind: "snap", frames: 4 }, 0, m)).toEqual({ scale: 1.06, blurPx: 0 });
+    expect(enterEffect({ kind: "snap", frames: 4 }, 4, m)).toEqual({ scale: 1, blurPx: 0 });
+    const mid = enterEffect({ kind: "zoom_blur", frames: 6 }, 3, m);
+    expect(mid.scale).toBeCloseTo(1.0275, 4);
+    expect(mid.blurPx).toBeCloseTo(2, 4);
+    expect(enterEffect(undefined, 0, m)).toEqual({ scale: 1, blurPx: 0 });
+  });
+  it("speakerTransform multiplies the zoom and still never shows a frame edge", () => {
+    expect(speakerTransform({ cx: 0.5, cy: 0.4, scaleFrom: 1, scaleTo: 1 }, 0, 30, 1.06)).toBe("scale(1.0600) translate(0.000%, 2.830%)");
   });
 });

@@ -75,6 +75,15 @@ export const testEditStyle = (): EditStyle => ({
   sfxVolumeDb: { whoosh: -10, pop: -12, tick: -18 },
   fillerWords: ["אממ", "אמ", "אהה", "אה", "אהמ", "ממ", "umm", "um", "uh", "uhh", "erm", "hmm"],
   noisyLogprob: -0.7,
+  captionPlacement: { minTopPct: 55, maxTopPct: 72, chinGapPct: 3, pillHalfPct: 2.8, holdPct: 3, noFaceTopPct: 60, seamTopPct: 50 },
+  breaks: { everyMs: 10_000, minMs: 8000, maxMs: 12_000, minShotFrames: 12, kinds: ["zoom_blur", "zoom_hit", "zoom_blur", "flash"], hitFactor: 1.2, zoomBlurFrames: 6 },
+  snapFrames: 4,
+});
+
+/** The first real reel's framing (camera below the face): the face sits low, chin at y 0.7. */
+export const lowFaceTrackFixture = (): FaceTrack => ({
+  intervalMs: 100,
+  samples: Array.from({ length: 91 }, (_, i) => ({ tMs: i * 100, box: { x: 0.35, y: 0.5, w: 0.3, h: 0.2 } })),
 });
 
 /** A steady face in the upper-middle of the frame for the whole 9 s fixture. */

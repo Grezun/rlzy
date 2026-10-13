@@ -20,3 +20,5 @@ export * from "./footage/face-track";
 export * from "./footage/shots";
 export * from "./footage/captions";
 export * from "./footage/compile";
+export * from "./footage/caption-place";
+export * from "./footage/breaks";

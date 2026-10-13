@@ -1,11 +1,13 @@
 import { FPS } from "../assemble";
 import { ceilToCent, DEFAULT_COST_TABLE, estimateFootageCost, estimateReelSeconds, type CostTable } from "../cost";
 import type { EditPlan } from "../schema/edit-plan";
-import type { FaceTrack, Transcript } from "../schema/footage";
+import type { FaceBox, FaceTrack, Transcript } from "../schema/footage";
 import { TimelineSchema, type SfxName, type Timeline, type TimelineClip, type Word } from "../schema/timeline";
+import { placeCaptionPages, screenChinY, type FaceSpan } from "./caption-place";
+import { addSnaps, applyBreaks, pickBreaks } from "./breaks";
 import { pageWords, type ReelWord } from "./captions";
 import { faceAt } from "./face-track";
-import { centerFor, framesToMs, maxScaleFor, msToFrames, planShots, shotCrop } from "./shots";
+import { centerFor, ctaStartFrame, framesToMs, maxScaleFor, msToFrames, planShots, shotCrop } from "./shots";
 import type { EditStyle } from "./style";
 
 export type FootageAssets = { videoSrc: string; voiceSrc?: string; musicSrc?: string; sfx: Partial<Record<SfxName, string>> };
@@ -50,6 +52,7 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
   const patternBreak = plan.ending.kind === "loop" && requested === "flash" ? "none" : requested;
 
   const clips: TimelineClip[] = [];
+  const faces: (FaceBox | null)[] = [];
   const reelWords: ReelWord[] = [];
   const voiceSegments: VoiceSegment[] = [];
   let at = 0;
@@ -58,6 +61,7 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
     // no source frame plays twice and no cut word is heard.
     const inMs = framesToMs(shot.inFrame);
     const face = faceTrack ? faceAt(faceTrack, framesToMs(shot.inFrame + shot.speechFrames / 2)) : null;
+    faces.push(face);
     let crop = shotCrop(i, framesToMs(shot.frames), face, style);
     if (i === 0 && patternBreak === "zoom_hit") {
       const to = r4(Math.max(1, Math.min(style.zoomHitScale, maxScaleFor(face, style))));
@@ -82,6 +86,11 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
     at += shot.frames;
   });
 
+  const ctaStart = ctaStartFrame(plan, total, style);
+  const picked = pickBreaks(clips.map((c) => ({ fromFrame: c.fromFrame, frames: c.durationInFrames })), style.breaks, [[ctaStart, total]], []);
+  const patternBreaks = applyBreaks(clips, picked, faces, style);
+  addSnaps(clips, style);
+
   const lastShot = shots[shots.length - 1];
   const speechEndFrame = total - (lastShot.frames - lastShot.speechFrames);
   const beats = new Map(plan.beats.map((b) => [b.id, b]));
@@ -95,10 +104,14 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
     return {
       fromFrame,
       durationInFrames: Math.max(1, endFrame - fromFrame),
-      words: g.map((w) => ({ text: w.text, emphasis: w.idx === beat.emphasisWordIdx })),
+      words: g.map((w) => ({ text: w.text, emphasis: w.idx === beat.emphasisWordIdx, startFrame: msToFrames(w.startMs) })),
       ...(lastOfBeat && beat.emoji ? { emoji: beat.emoji } : {}),
     };
   });
+
+  const spans: FaceSpan[] = clips.map((c, i) => ({ fromFrame: c.fromFrame, endFrame: c.fromFrame + c.durationInFrames, chinY: screenChinY(faces[i], c.crop!) }));
+  const tops = placeCaptionPages(pages, spans, style.captionPlacement);
+  const placedPages = pages.map((p, i) => ({ ...p, topPct: tops[i] }));
 
   const headline = plan.hook.headline;
   const hook = {
@@ -108,7 +121,7 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
   const ctaFrames = Math.min(total, msToFrames(style.ctaMs));
   const ending =
     plan.ending.kind === "cta"
-      ? { kind: "cta" as const, keyword: plan.ending.keyword, fromFrame: total - ctaFrames, durationInFrames: ctaFrames }
+      ? { kind: "cta" as const, keyword: plan.ending.keyword, fromFrame: ctaStart, durationInFrames: ctaFrames }
       : { kind: plan.ending.kind };
 
   const cues: { name: SfxName; frame: number; volumeDb: number }[] = [];
@@ -121,6 +134,7 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
       const small = splitWords(headline.small).length;
       splitWords(headline.big).forEach((_, j) => cues.push({ name: pops[pop++ % 2], frame: (small + j) * style.headlineWordFrames, volumeDb: style.sfxVolumeDb.pop }));
     }
+    patternBreaks.forEach((b, i) => cues.push({ name: whooshes[(i + 1) % 2], frame: b.frame, volumeDb: style.sfxVolumeDb.whoosh }));
     if (ending.kind === "cta") cues.push({ name: pops[pop++ % 2], frame: ending.fromFrame, volumeDb: style.sfxVolumeDb.pop });
     if (plan.sfx === "lively") {
       clips.forEach((c, i) => {
@@ -145,11 +159,12 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
     style: { captionPreset: "pill", font: "Heebo", palette: ["#FEE80A", "#000000"] },
     audio: { voiceUrl: assets.voiceSrc, musicUrl: assets.musicSrc, musicDuckingDb: style.musicUnderVoiceDb },
     clips,
-    captions: { words: reelWords.map(({ text, startMs, endMs }) => ({ text, startMs, endMs })), pages },
+    captions: { words: reelWords.map(({ text, startMs, endMs }) => ({ text, startMs, endMs })), pages: placedPages },
     overlays: [],
     hook,
     ending,
     ...(sfx.length ? { sfx } : {}),
+    ...(patternBreaks.length ? { patternBreaks } : {}),
   });
   return { timeline, voiceSegments, durationMs: framesToMs(total) };
 }

@@ -6,6 +6,11 @@ import type { EditStyle } from "./style";
 
 export const msToFrames = (ms: number) => Math.round((ms * FPS) / 1000);
 export const framesToMs = (frames: number) => (frames * 1000) / FPS;
+
+/** First frame of the CTA card (the reel's length when the ending isn't a CTA). The one rule: breaks, cutaway placement, the estimate and compileFootage all call it. */
+export function ctaStartFrame(plan: Pick<EditPlan, "ending">, total: number, style: EditStyle): number {
+  return plan.ending.kind === "cta" ? total - Math.min(total, msToFrames(style.ctaMs)) : total;
+}
 const r4 = (v: number) => Math.round(v * 10_000) / 10_000;
 
 const norm = (s: string) =>

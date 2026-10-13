@@ -24,8 +24,23 @@ export const houseStyle = {
     sfxVolumeDb: { whoosh: -10, pop: -12, tick: -18 },
     fillerWords: ["אממ", "אמ", "אהה", "אה", "אהמ", "ממ", "umm", "um", "uh", "uhh", "erm", "hmm"],
     noisyLogprob: -0.7,
+    // Pill ≈ 66 px × 1.25 + 2 × 10 px padding ≈ 103 px = 5.4 % of 1920 → half 2.8 %. 3 % (≈ 58 px) clears chin and beard.
+    // 55 %: always below mid-frame, so the pill never crosses a face in the upper half. 72 %: the pill's bottom
+    // (74.8 %) stays above Instagram's caption/username/audio rows (the lowest ≈ 22 %). 50 %: the split seam (ref).
+    captionPlacement: { minTopPct: 55, maxTopPct: 72, chinGapPct: 3, pillHalfPct: 2.8, holdPct: 3, noFaceTopPct: 60, seamTopPct: 50 },
+    // One visible break every ≈ 10 s (8–12 s): the first reel had a single break at 0 s and read as static.
+    breaks: { everyMs: 10_000, minMs: 8000, maxMs: 12_000, minShotFrames: 12, kinds: ["zoom_blur", "zoom_hit", "zoom_blur", "flash"], hitFactor: 1.2, zoomBlurFrames: 6 },
+    snapFrames: 4,
   } satisfies EditStyle,
-  captions: { topPct: 45, fontSize: 66, textColor: "#000000", pillColor: "#FFFFFF", emphasisColor: "#E5262A", radius: 24, padX: 30, padY: 10, maxWidthPct: 86, popFrames: 4, popFrom: 0.9 },
+  captions: {
+    topPct: 45, fontSize: 66, textColor: "#000000", pillColor: "#FFFFFF", emphasisColor: "#E5262A", radius: 24, padX: 30, padY: 10, maxWidthPct: 86,
+    // Bouncier than plan 1's 0.9 → 1 over 4 frames, which read as no animation in the first real reel.
+    popFrames: 6, popFrom: 0.8,
+    minVisibleFrames: 8,
+    activeWord: { peak: 1.12, popFrames: 3, highlight: "#FEE80A", padX: 8, radius: 12 },
+    emoji: { popFrames: 8, overshoot: 1.35 },
+  },
+  motion: { snapScale: 1.06, zoomBlurScale: 1.22, zoomBlurPx: 16 },
   /** Under the captions (y 45 %) so neither covers the face (eyes sit at y ≈ 0.21–0.28 (ref)). */
   headline: { topPct: 58, smallSize: 62, bigSize: 168, smallColor: "#FFFFFF", bigColor: "#FEE80A", shadow: "0 8px 28px rgba(0,0,0,0.55)", popFrames: 4, popFrom: 0.6 },
   cta: { topPct: 62, smallSize: 64, bigSize: 150, color: "#FFFFFF", keywordColor: "#FEE80A", shadow: "0 8px 28px rgba(0,0,0,0.55)", scrim: "linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%)", popFrames: 6, popFrom: 0.7 },

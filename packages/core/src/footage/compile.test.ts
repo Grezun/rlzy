@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ceilToCent, estimateFootageCost, estimateReelSeconds } from "../cost";
 import { TimelineSchema } from "../schema/timeline";
 import { parseEditPlan, type EditPlan } from "../schema/edit-plan";
-import { faceTrackFixture, footageTranscript, testEditStyle, validEditPlan } from "../testing/fixtures";
+import { faceTrackFixture, footageTranscript, lowFaceTrackFixture, testEditStyle, validEditPlan } from "../testing/fixtures";
 import { compileFootage, EmptyEditError, footageDurationMs, withFootageEstimate, type FootageAssets } from "./compile";
 import { framesToMs, planShots } from "./shots";
 
@@ -140,5 +140,68 @@ describe("estimate", () => {
     const ai = plan({ music: { kind: "ai", prompt: "calm lo-fi" } });
     // 8 billed seconds × $0.0101 = $0.0808: rounding to nearest would give 0.08 and skip the approved music.
     expect(withFootageEstimate(ai, transcript.words, style, { "elevenlabs/music": { perSecond: 0.0101 } }).estimate.credits).toBe(0.09);
+  });
+});
+
+describe("pill caption placement and word timing", () => {
+  it("keeps the pill at 55 % when the face is high (the reference framing)", () => {
+    expect(compile().timeline.captions.pages!.every((p) => p.topPct === 55)).toBe(true);
+  });
+  it("moves the pill below a low face (camera below the face), within 55–72 %", () => {
+    const pages = compile(plan(), lowFaceTrackFixture()).timeline.captions.pages!;
+    expect(pages[0].topPct).toBe(72);
+    for (const p of pages) {
+      expect(p.topPct).toBeGreaterThanOrEqual(55);
+      expect(p.topPct).toBeLessThanOrEqual(72);
+    }
+  });
+  it("uses 60 % without a face track", () => {
+    expect(compileFootage(plan(), transcript, null, assets, style).timeline.captions.pages!.every((p) => p.topPct === 60)).toBe(true);
+  });
+  it("gives every caption word its reel start frame", () => {
+    expect(compile().timeline.captions.pages![1].words.map((w) => w.startFrame)).toEqual([27, 41, 50]);
+  });
+});
+
+/** 60 words of 400 ms with 100 ms gaps (no cut inside a beat), 6 beats of 10 words: shots start every 5 s. */
+const longTalk = () => ({
+  languageCode: "heb", languageProbability: 0.98, events: [],
+  words: Array.from({ length: 60 }, (_, i) => ({ text: `מילה${i}`, startMs: i * 500, endMs: i * 500 + 400 })),
+});
+const longPlan = (over: Partial<EditPlan> = {}) => parseEditPlan({
+  ...validEditPlan(),
+  source: { ...validEditPlan().source, durationMs: 30_000 },
+  beats: Array.from({ length: 6 }, (_, i) => ({ id: `b${i + 1}`, startWordIdx: i * 10, endWordIdx: i * 10 + 9, keep: true })),
+  hook: { patternBreak: "none", reason: "" },
+  ending: { kind: "none" },
+  ...over,
+});
+
+describe("motion", () => {
+  it("snaps punch-in cuts, never punch-outs or the first shot", () => {
+    expect(compile().timeline.clips.map((c) => c.enter?.kind)).toEqual([undefined, "snap", "snap", undefined]);
+  });
+  it("adds a pattern break about every 10 s with a whoosh each: zoom blur, then zoom hit", () => {
+    const { timeline } = compileFootage(longPlan(), longTalk(), null, assets, style);
+    expect(timeline.clips.map((c) => c.fromFrame)).toEqual([0, 149, 299, 449, 599, 749]);
+    expect(timeline.patternBreaks).toEqual([{ frame: 299, kind: "zoom_blur" }, { frame: 599, kind: "zoom_hit" }]);
+    expect(timeline.clips[2].enter).toEqual({ kind: "zoom_blur", frames: 6 });
+    expect(timeline.clips[4].crop).toMatchObject({ scaleFrom: 1.15, scaleTo: 1.38, punchFrames: 6 });
+    expect(timeline.clips.map((c) => c.enter?.kind)).toEqual([undefined, "snap", "zoom_blur", undefined, undefined, "snap"]);
+    expect(timeline.sfx?.map((c) => `${c.name}@${c.frame}`)).toEqual(["whoosh2@299", "whoosh1@599"]);
+  });
+  it("never breaks under the CTA card", () => {
+    // b6 split in two: the cut at word 58 (≈ frame 868) lands in the 8–12 s window after the break at 599 and inside the last 2.5 s.
+    const beats = [...longPlan().beats.slice(0, 5), { id: "b6", startWordIdx: 50, endWordIdx: 57, keep: true }, { id: "b7", startWordIdx: 58, endWordIdx: 59, keep: true }];
+    const open = compileFootage(longPlan({ beats }), longTalk(), null, assets, style).timeline;
+    const lateCut = open.clips.at(-1)!.fromFrame;
+    expect(open.patternBreaks!.map((b) => b.frame)).toEqual([299, 599, lateCut]);
+    const cta = compileFootage(longPlan({ beats, ending: { kind: "cta", keyword: "AI" } }), longTalk(), null, assets, style).timeline;
+    const ctaFrom = cta.ending?.kind === "cta" ? cta.ending.fromFrame : -1;
+    expect(lateCut).toBeGreaterThanOrEqual(ctaFrom);
+    expect(cta.patternBreaks!.map((b) => b.frame)).toEqual([299, 599]);
+  });
+  it("a short reel has no breaks", () => {
+    expect(compile().timeline.patternBreaks).toBeUndefined();
   });
 });

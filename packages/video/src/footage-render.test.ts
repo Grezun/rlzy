@@ -8,9 +8,10 @@ const OUT = resolve("work/stills");
 
 describe("footage components (stills)", () => {
   it.each([
-    ["headline-and-pill", 20],
-    ["pill-emphasis-emoji", 70],
-    ["cta-card", 120],
+    ["headline-only", 20],
+    ["pill-active-word", 70],
+    ["pill-emphasis-emoji", 110],
+    ["cta-card", 160],
   ] as const)("renders %s for he and en", async (name, frame) => {
     await mkdir(OUT, { recursive: true });
     for (const lang of ["he", "en"] as const) {

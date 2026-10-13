@@ -41,6 +41,7 @@ export const TimelineClipSchema = z.object({
   source: z.object({ inMs: z.number().nonnegative(), outMs: z.number().positive() }).optional(),
   crop: TimelineCropSchema.optional(),
   layout: z.enum(["full", "split"]).optional(),
+  enter: z.object({ kind: z.enum(["snap", "zoom_blur"]), frames: z.number().int().positive() }).optional(),
 });
 export type TimelineClip = z.infer<typeof TimelineClipSchema>;
 
@@ -53,10 +54,16 @@ export const TimelineOverlaySchema = z.object({
 });
 export type TimelineOverlay = z.infer<typeof TimelineOverlaySchema>;
 
+/** Recurring pattern-break kinds (plan 2 Task 1). The only definition: EditStyle and the timeline both use it. */
+export const BreakKindSchema = z.enum(["zoom_hit", "flash", "zoom_blur"]);
+export type BreakKind = z.infer<typeof BreakKindSchema>;
+
 export const CaptionPageSchema = z.object({
   fromFrame: z.number().int().nonnegative(),
   durationInFrames: z.number().int().positive(),
-  words: z.array(z.object({ text: z.string().min(1), emphasis: z.boolean() })).min(1),
+  words: z.array(z.object({ text: z.string().min(1), emphasis: z.boolean(), startFrame: z.number().int().nonnegative().optional() })).min(1),
+  /** Pill centre in % of the height (absent: the component's default 45 %). */
+  topPct: z.number().min(0).max(100).optional(),
   emoji: z.string().optional(),
 });
 export type CaptionPage = z.infer<typeof CaptionPageSchema>;
@@ -91,5 +98,6 @@ export const TimelineSchema = z.object({
     z.object({ kind: z.literal("none") }),
   ]).optional(),
   sfx: z.array(z.object({ name: SfxNameSchema, frame: z.number().int().nonnegative(), src: z.string().min(1), volumeDb: z.number() })).optional(),
+  patternBreaks: z.array(z.object({ frame: z.number().int().nonnegative(), kind: BreakKindSchema })).optional(),
 });
 export type Timeline = z.infer<typeof TimelineSchema>;

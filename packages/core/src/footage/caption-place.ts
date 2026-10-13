@@ -1,0 +1,56 @@
+import type { FaceBox } from "../schema/footage";
+import type { TimelineCrop } from "../schema/timeline";
+import type { EditStyle } from "./style";
+
+/** One clip's stretch of the reel and where the chin shows on screen (normalised), or null with no face. Split clips use the seam. */
+export type FaceSpan = { fromFrame: number; endFrame: number; chinY: number | null; split?: boolean };
+
+const r4 = (v: number) => Math.round(v * 10_000) / 10_000;
+const toHalf = (v: number) => Math.round(v * 2) / 2;
+
+/**
+ * The lowest on-screen point of the face over the crop's zoom range. Same maths as speakerTransform: zoom by s about
+ * the frame centre after moving the clamped centre c there, so a source y shows at 0.5 + (y − c) · s.
+ */
+export function screenChinY(face: FaceBox | null, crop: TimelineCrop): number | null {
+  if (!face) return null;
+  let lowest = -Infinity;
+  for (const raw of [crop.scaleFrom, crop.scaleTo]) {
+    const s = Math.max(1, raw);
+    const half = 0.5 / s;
+    const c = Math.min(1 - half, Math.max(half, crop.cy));
+    lowest = Math.max(lowest, 0.5 + (face.y + face.h - c) * s);
+  }
+  return r4(lowest);
+}
+
+/**
+ * Pill centre per page, in % of the height (spec §6 PillCaptions, tuned by plan 2 Task 1). One value per page, so a
+ * page never moves while it shows. Split pages sit on the seam. Small moves (< holdPct) keep the previous position;
+ * pages with no face keep the previous page's position (the first known one for leading pages).
+ */
+export function placeCaptionPages(pages: { fromFrame: number; durationInFrames: number }[], spans: FaceSpan[], p: EditStyle["captionPlacement"]): number[] {
+  const raw = pages.map((page): { top: number; seam: boolean } | null => {
+    const end = page.fromFrame + page.durationInFrames;
+    const over = spans.filter((s) => s.fromFrame < end && s.endFrame > page.fromFrame);
+    if (over.some((s) => s.split)) return { top: p.seamTopPct, seam: true };
+    const chins = over.flatMap((s) => (s.chinY === null ? [] : [s.chinY]));
+    if (!chins.length) return null;
+    const top = Math.max(...chins) * 100 + p.chinGapPct + p.pillHalfPct;
+    return { top: toHalf(Math.min(p.maxTopPct, Math.max(p.minTopPct, top))), seam: false };
+  });
+  const firstKnown = raw.find((r) => r && !r.seam)?.top ?? p.noFaceTopPct;
+  const out: number[] = [];
+  let prev: number | null = null;
+  for (const r of raw) {
+    if (r?.seam) {
+      out.push(r.top);
+      continue;
+    }
+    let top: number = r ? r.top : (prev ?? firstKnown);
+    if (prev !== null && Math.abs(top - prev) < p.holdPct) top = prev;
+    out.push(top);
+    prev = top;
+  }
+  return out;
+}

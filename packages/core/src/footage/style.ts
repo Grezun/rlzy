@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { BreakKindSchema } from "../schema/timeline";
 
 export const EditStyleSchema = z.object({
   cutGapMs: z.number().positive(),
@@ -21,5 +22,27 @@ export const EditStyleSchema = z.object({
   fillerWords: z.array(z.string().min(1)),
   /** Mean word logprob below this adds a "noisy audio" note to the plan. */
   noisyLogprob: z.number().max(0),
+  /** Pill caption placement (Task 1 of plan 2): centre = on-screen chin + chinGapPct + pillHalfPct, clamped. */
+  captionPlacement: z.object({
+    minTopPct: z.number().min(0).max(100),
+    maxTopPct: z.number().min(0).max(100),
+    chinGapPct: z.number().min(0).max(100),
+    pillHalfPct: z.number().min(0).max(100),
+    holdPct: z.number().min(0).max(100),
+    noFaceTopPct: z.number().min(0).max(100),
+    seamTopPct: z.number().min(0).max(100),
+  }),
+  /** Recurring pattern breaks after the hook: one every everyMs (window minMs–maxMs), at cuts. */
+  breaks: z.object({
+    everyMs: z.number().positive(),
+    minMs: z.number().positive(),
+    maxMs: z.number().positive(),
+    minShotFrames: z.number().int().positive(),
+    kinds: z.array(BreakKindSchema).min(1),
+    hitFactor: z.number().min(1).max(2),
+    zoomBlurFrames: z.number().int().positive(),
+  }),
+  /** Punch-in cuts (to a larger zoom step) enter with a short scale snap. */
+  snapFrames: z.number().int().positive(),
 });
 export type EditStyle = z.infer<typeof EditStyleSchema>;

@@ -10,7 +10,7 @@ import { serveDir } from "./serve";
 describe("footage render (speaker shot, flash)", () => {
   it("flashes white at frame 0, then shows the zoomed speaker video", async () => {
     const dir = await mkdtemp(join(tmpdir(), "footage-render-"));
-    await makeTestVideo(join(dir, "speaker.mp4"), { durationSec: 6 });
+    await makeTestVideo(join(dir, "speaker.mp4"), { durationSec: 8 });
     const server = await serveDir(dir);
     try {
       const timeline = sampleFootageTimeline("he", server.urlFor("speaker.mp4"));

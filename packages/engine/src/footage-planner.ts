@@ -57,7 +57,7 @@ export function footageSystemPrompt(): string {
     '  - patternBreak: "zoom_hit" (a fast punch-in), "flash" (two white frames) or "none".',
     "  - reason: one sentence explaining the hook, shown to the user.",
     "- emphasisWordIdx: in about one beat in three, the index of its single most important word (shown in red). -1 for none.",
-    "- emoji: rarely; 👆 or 👇 when the speaker points, or one emoji that fits the line. Empty otherwise.",
+    "- emoji: in about one beat in four: 👆 or 👇 when the speaker points, or one emoji that fits the line (it pops in when the line ends). Empty otherwise.",
     '- ending: "cta" when there is a comment keyword (the user gave one, or the speaker asks viewers to comment a word: put that word in keyword); "loop" when the last line can flow back into the first; otherwise "none".',
     '- music: a library track whose mood fits (kind "library", trackId); "ai" with a short English instrumental prompt (genre, mood, tempo) only when no library track fits; "none" for serious or emotional talks.',
     '- sfx: "subtle" by default, "lively" for energetic tips, "off" for serious topics.',
