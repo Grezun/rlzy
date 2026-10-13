@@ -3,6 +3,7 @@ import { ceilToCent, estimateFootageCost, estimateReelSeconds } from "../cost";
 import { TimelineSchema } from "../schema/timeline";
 import { parseEditPlan, type EditPlan } from "../schema/edit-plan";
 import { EXTRA_IMG, faceTrackFixture, fixtureExtras, footageTranscript, lowFaceTrackFixture, testEditStyle, validEditPlan } from "../testing/fixtures";
+import { cutawayBudget, planCutaways } from "./cutaways";
 import { compileFootage, EmptyEditError, footageDurationMs, withFootageEstimate, type FootageAssets } from "./compile";
 import { framesToMs, planShots } from "./shots";
 
@@ -119,6 +120,22 @@ describe("compileFootage", () => {
 });
 
 describe("estimate", () => {
+  it("prices a 30 s reel at the full budget: 10 cutaways, 4 of them clips", () => {
+    const words = Array.from({ length: 60 }, (_, i) => ({ text: `מילה${i}`, startMs: i * 500, endMs: i * 500 + 400 }));
+    const cut = (media: "image" | "video") => ({ source: { kind: "ai_broll" as const, prompt: "laptop", media }, layout: "full" as const, atMs: 0, durationMs: 1500 });
+    const budget = cutawayBudget(30, false);
+    const p = parseEditPlan({
+      ...validEditPlan(),
+      targetDurationSec: 30,
+      source: { ...validEditPlan().source, durationMs: 30_000 },
+      beats: Array.from({ length: budget.max }, (_, i) => ({ id: `b${i + 1}`, startWordIdx: i * 6, endWordIdx: i * 6 + 5, keep: true, cutaway: cut(i % 3 === 0 ? "video" : "image") })),
+      hook: { patternBreak: "none", reason: "" },
+      ending: { kind: "none" },
+    });
+    expect(planCutaways(p, words, style).placed).toHaveLength(10);
+    // 4 clips × ($0.04 still + 4 billed s × $0.08) + 6 stills × $0.04
+    expect(withFootageEstimate(p, words, style).estimate.credits).toBe(1.68);
+  });
   it("prices only the cutaways that will be placed", () => {
     const cut = (media: "image" | "video", atMs = 0) => ({ source: { kind: "ai_broll" as const, prompt: "laptop", media }, layout: "full" as const, atMs, durationMs: 2000 });
     const p = plan({ beats: validEditPlan().beats.map((b) => (b.id === "b1" ? { ...b, cutaway: cut("video") } : b.id === "b2" ? { ...b, cutaway: cut("image") } : { ...b, cutaway: cut("video") })) });

@@ -89,9 +89,9 @@ export function planCutaways(plan: Pick<EditPlan, "beats" | "hook" | "ending" | 
 
 export type CutawayBudget = { max: number; maxVideo: number; maxSelf: number };
 
-/** Spec §4.3: what Claude may plan for a reel of targetSec (code enforces it with applyCutawayBudget). */
+/** Spec §4.3 as amended by the look pass: about one cutaway every 3 s and one clip every 7.5 s. Code enforces it with applyCutawayBudget. */
 export function cutawayBudget(targetSec: number, hasCharacter: boolean): CutawayBudget {
-  return { max: Math.round(targetSec / 5), maxVideo: Math.floor(targetSec / 15), maxSelf: hasCharacter ? Math.max(1, Math.floor(targetSec / 20)) : 0 };
+  return { max: Math.round(targetSec / 3), maxVideo: Math.floor(targetSec / 7.5), maxSelf: hasCharacter ? Math.max(1, Math.floor(targetSec / 20)) : 0 };
 }
 
 /**

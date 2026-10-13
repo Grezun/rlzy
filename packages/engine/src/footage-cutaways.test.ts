@@ -1,4 +1,4 @@
-import { parseEditPlan, planCutaways, type EditPlan } from "@reel/core";
+import { parseEditPlan, planCutaways, type EditPlan, type PlacedCutaway } from "@reel/core";
 import { makeTestImage, probe } from "@reel/media";
 import { houseStyle } from "@reel/video/house-style";
 import { mkdtemp } from "node:fs/promises";
@@ -90,4 +90,18 @@ describe("generateCutaways (fake Higgsfield, real ffmpeg)", () => {
     expect(cutawayPrompt(" laptop ", "full")).toBe("laptop, vertical 9:16 photo, photorealistic, natural light, no text, no captions, no watermark");
     expect(cutawayPrompt("laptop", "split")).toMatch(/main subject centred in the middle of the frame$/);
   });
+
+  it("at the full 30 s budget, reserves in reel order and skips the one clip the estimate can't cover", async () => {
+    const s = await setup();
+    const placed: PlacedCutaway[] = Array.from({ length: 10 }, (_, i) => ({
+      beatId: `b${i + 1}`, source: { kind: "ai_broll", prompt: `scene ${i + 1}`, media: i % 3 === 0 ? "video" : "image" },
+      layout: "full", fromFrame: i * 90, durationInFrames: 45, pulled: false,
+    }));
+    const budget = makeBudget(1.67); // the full price is $1.68
+    const r = await generateCutaways(placed, s.p, { ...s.deps(0), budget });
+    expect(r.notes).toEqual(["The cutaway in b10 was skipped: it would cost more than the approved estimate. Use Edit as new version and approve again to update it."]);
+    expect(Object.keys(r.assets)).toHaveLength(9);
+    expect([s.providers.calls.image, s.providers.calls.video]).toEqual([9, 3]);
+    expect(budget.remaining).toBeCloseTo(1.67 - 1.32, 6);
+  }, 300_000);
 });

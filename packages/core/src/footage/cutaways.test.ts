@@ -55,10 +55,12 @@ describe("placeCutaways", () => {
 });
 
 describe("cutaway budget", () => {
-  it("scales with the target length", () => {
-    expect(cutawayBudget(15, false)).toEqual({ max: 3, maxVideo: 1, maxSelf: 0 });
-    expect(cutawayBudget(30, true)).toEqual({ max: 6, maxVideo: 2, maxSelf: 1 });
-    expect(cutawayBudget(90, true)).toEqual({ max: 18, maxVideo: 6, maxSelf: 4 });
+  it("allows about one cutaway every 3 s and one clip every 7.5 s", () => {
+    expect(cutawayBudget(15, false)).toEqual({ max: 5, maxVideo: 2, maxSelf: 0 });
+    expect(cutawayBudget(30, true)).toEqual({ max: 10, maxVideo: 4, maxSelf: 1 });
+    expect(cutawayBudget(45, true)).toEqual({ max: 15, maxVideo: 6, maxSelf: 2 });
+    expect(cutawayBudget(60, false)).toEqual({ max: 20, maxVideo: 8, maxSelf: 0 });
+    expect(cutawayBudget(90, true)).toEqual({ max: 30, maxVideo: 12, maxSelf: 4 });
   });
   it("removes AI shots of you without a character, then extras past the maximum, then turns surplus clips into stills", () => {
     const vid = (kind: "ai_broll" | "ai_self"): Cutaway => ({ source: { kind, prompt: "x", media: "video" }, layout: "full", atMs: 0, durationMs: 1000 });
@@ -71,7 +73,7 @@ describe("cutaway budget", () => {
       { id: "b6", keep: true, cutaway: vid("ai_broll") },
       { id: "b7", keep: false, cutaway: vid("ai_self") },
     ];
-    const r = applyCutawayBudget(beats, cutawayBudget(15, false), 15);
+    const r = applyCutawayBudget(beats, { max: 3, maxVideo: 1, maxSelf: 0 }, 15);
     // b7 is dropped, but an AI shot of you without a character would still fail the schema: it is stripped too (no warning, it never shows).
     expect(r.beats.map((b) => b.cutaway && ("media" in b.cutaway.source ? `${b.cutaway.source.kind}:${b.cutaway.source.media}` : b.cutaway.source.kind))).toEqual(
       ["ai_broll:video", "ai_broll:image", undefined, "ai_broll:video", "diagram", undefined, undefined],

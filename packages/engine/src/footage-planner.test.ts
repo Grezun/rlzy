@@ -2,7 +2,7 @@ import { NO_CUTAWAY, parseEditPlan, withFootageEstimate, type DraftCutaway, type
 import { houseStyle } from "@reel/video/house-style";
 import { describe, expect, it, vi } from "vitest";
 import { CHARACTER_ID, EXTRA_VID, fixtureExtras, footageTranscript, validEditPlan } from "../../core/src/testing/fixtures";
-import { buildEditPlan, createFootagePlanner, footageUserPrompt, transcriptWarnings, type EditDraftModel, type FootagePlanRequest } from "./footage-planner";
+import { buildEditPlan, createFootagePlanner, footageSystemPrompt, footageUserPrompt, transcriptWarnings, type EditDraftModel, type FootagePlanRequest } from "./footage-planner";
 import { splitBeats } from "@reel/core";
 
 const style = houseStyle.edit;
@@ -155,9 +155,15 @@ describe("cutaways from Claude's draft", () => {
     expect(plan.hook.patternBreak).toBe("zoom_hit");
     expect(plan.warnings).toEqual(["1 AI shot of you was removed (no character is picked).", "The B-roll opening had no cutaway left, so it became a zoom hit."]);
   });
+  it("asks Claude to use the cutaway budget, and never mentions yellow", () => {
+    const system = footageSystemPrompt();
+    expect(system).toContain("plan close to its maximum (about one cutaway every 3 seconds of the finished reel)");
+    expect(system).toContain("one or two huge words on a red sticker");
+    expect(system).not.toMatch(/yellow/i);
+  });
   it("tells Claude the budget, the uploads and the character", () => {
     const user = footageUserPrompt(RICH, beats);
-    expect(user).toContain('Cutaway budget: at most 3 cutaways (at most 1 video clip); at most 1 AI shot of the speaker (character "Alex").');
+    expect(user).toContain('Cutaway budget: at most 5 cutaways (at most 2 video clips); at most 1 AI shot of the speaker (character "Alex"). Plan close to the maximum: about one cutaway every 3 s.');
     expect(user).toContain('- x1 (photo, landscape) "צילום מסך"');
     expect(user).toContain('- x2 (clip, 2.0 s, portrait) "demo clip"');
     expect(user).toContain("Background replacement is not available in this version: never mention it.");

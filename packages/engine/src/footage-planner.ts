@@ -54,7 +54,7 @@ export function footageSystemPrompt(): string {
     "- Fit the target length: if the talk is longer, drop the weakest beats, never the main point.",
     "- The hook is the first 3 seconds. Combine:",
     "  - coldOpenBeatId: the single most surprising or valuable line, played first and not repeated later. Empty when the first kept beat already hooks.",
-    "  - headlineSmall + headlineBig: a small white line (at most 5 words) and a huge yellow word or two (at most 12 characters), in the reel's language. Both empty for no headline.",
+    "  - headlineSmall + headlineBig: a small white line (at most 5 words) and one or two huge words on a red sticker (at most 12 characters), in the reel's language. Both empty for no headline.",
     '  - patternBreak: "zoom_hit" (a fast punch-in), "flash" (two white frames), "broll" (your first cutaway opens the reel, full screen, for 1 s: only when it is a strong visual hook) or "none".',
     "  - reason: one sentence explaining the hook, shown to the user.",
     "- emphasisWordIdx: in about one beat in three, the index of its single most important word (shown in red). -1 for none.",
@@ -63,7 +63,7 @@ export function footageSystemPrompt(): string {
     '- music: a library track whose mood fits (kind "library", trackId); "ai" with a short English instrumental prompt (genre, mood, tempo) only when no library track fits; "none" for serious or emotional talks.',
     '- sfx: "subtle" by default, "lively" for energetic tips, "off" for serious topics.',
     "- dropReason: for every dropped beat, a short English reason (\"retake of b4\", \"false start\", \"tangent\").",
-    "- cutaway: at most one per beat, kind \"none\" for most beats; stay inside the cutaway budget. Show what the words talk about, 1–3 s (durationMs 1000–3000), starting atMs after the beat starts, counted after pauses are cut; keep atMs + durationMs inside the beat.",
+    "- cutaway: at most one per beat. Use the cutaway budget: plan close to its maximum (about one cutaway every 3 seconds of the finished reel), spread evenly over the kept beats, and use the video clips it allows on the most visual moments. Show what the words talk about; 1–2 s is typical (durationMs 1000–3000), starting atMs after the beat starts, counted after pauses are cut; keep atMs + durationMs inside the beat.",
     '  - "ai_broll": a concrete thing or action the beat names. prompt: one English sentence for a realistic photo (subject, setting, light); never text, screens with words, or logos. media "video" only when the motion matters, otherwise "image".',
     '  - "ai_self": the speaker doing what the beat describes (only when a character is available). prompt in English, calling them "the person".',
     '  - "upload": one of the user\'s uploads whose label fits the beat; uploadId is its x1…x6 id.',
@@ -79,7 +79,7 @@ const LANGUAGE = { he: "Hebrew", en: "English" } as const;
 function cutawayBudgetLine(req: FootagePlanRequest): string {
   const b = cutawayBudget(req.settings.targetDurationSec, !!req.character);
   const self = req.character ? `at most ${plural(b.maxSelf, "AI shot", "AI shots")} of the speaker (character "${req.character.name}").` : "no AI shots of the speaker (no character).";
-  return `Cutaway budget: at most ${plural(b.max, "cutaway", "cutaways")} (at most ${plural(b.maxVideo, "video clip", "video clips")}); ${self}`;
+  return `Cutaway budget: at most ${plural(b.max, "cutaway", "cutaways")} (at most ${plural(b.maxVideo, "video clip", "video clips")}); ${self} Plan close to the maximum: about one cutaway every 3 s.`;
 }
 
 function uploadLines(extras: FootageExtra[]): string[] {
