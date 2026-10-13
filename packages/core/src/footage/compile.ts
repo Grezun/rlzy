@@ -3,7 +3,8 @@ import { ceilToCent, DEFAULT_COST_TABLE, estimateFootageCost, estimateReelSecond
 import type { EditPlan } from "../schema/edit-plan";
 import type { FaceBox, FaceTrack, Transcript } from "../schema/footage";
 import { TimelineSchema, type SfxName, type Timeline, type TimelineClip, type TimelineCrop, type TimelineCutaway, type Word } from "../schema/timeline";
-import { placeCaptionPages, screenChinY, type FaceSpan } from "./caption-place";
+import { calloutSpot, placeCallouts } from "./callouts";
+import { placeCaptionPages, screenChinY, screenFaceRect, type FaceSpan, type ScreenRect } from "./caption-place";
 import { addSnaps, applyBreaks, pickBreaks } from "./breaks";
 import { pageWords, type ReelWord } from "./captions";
 import { cutawayFit, cutawayTransitions, placeCutaways, type PlacedCutaway } from "./cutaways";
@@ -13,7 +14,8 @@ import type { EditStyle } from "./style";
 
 export type FootageAssets = { videoSrc: string; voiceSrc?: string; musicSrc?: string; sfx: Partial<Record<SfxName, string>>; cutaways?: Record<string, { kind: "image" | "video"; src: string }> };
 export type VoiceSegment = { inMs: number; outMs: number };
-export type CompiledFootage = { timeline: Timeline; voiceSegments: VoiceSegment[]; durationMs: number };
+/** notes: callouts left out because no spot avoided the face (generation adds them to its notes). */
+export type CompiledFootage = { timeline: Timeline; voiceSegments: VoiceSegment[]; durationMs: number; notes: string[] };
 
 export class EmptyEditError extends Error {
   constructor() {
@@ -96,10 +98,16 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
   });
 
   const ctaStart = ctaStartFrame(plan, total, style);
+  // Callouts are timed from the plan alone (placed cutaways, headline, CTA); pattern breaks then keep off them.
+  const calloutPlan = placeCallouts(plan, shots, placement.placed, style);
   const picked = pickBreaks(
     clips.map((c) => ({ fromFrame: c.fromFrame, frames: c.durationInFrames })),
     style.breaks,
-    [[ctaStart, total], ...shown.map((c): [number, number] => [c.fromFrame, c.fromFrame + c.durationInFrames])],
+    [
+      [ctaStart, total],
+      ...shown.map((c): [number, number] => [c.fromFrame, c.fromFrame + c.durationInFrames]),
+      ...calloutPlan.placed.map((c): [number, number] => [c.fromFrame - style.callouts.clearFrames, c.fromFrame + c.durationInFrames]),
+    ],
     shown.map((c) => c.fromFrame),
   );
   const patternBreaks = applyBreaks(clips, picked, faces, style);
@@ -139,6 +147,23 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
   const tops = placeCaptionPages(pages, spans, style.captionPlacement);
   const placedPages = pages.map((p, i) => ({ ...p, topPct: tops[i] }));
 
+  const notes: string[] = [];
+  const callouts = calloutPlan.placed.flatMap((c) => {
+    const end = c.fromFrame + c.durationInFrames;
+    const rects = finalClips
+      .flatMap((clip, i) => (clip.fromFrame < end && clip.fromFrame + clip.durationInFrames > c.fromFrame ? [screenFaceRect(finalFaces[i], clip.crop!)] : []))
+      .filter((r): r is ScreenRect => r !== null);
+    const face = rects.length
+      ? { top: Math.min(...rects.map((r) => r.top)), bottom: Math.max(...rects.map((r) => r.bottom)), left: Math.min(...rects.map((r) => r.left)), right: Math.max(...rects.map((r) => r.right)) }
+      : null;
+    const spot = calloutSpot(face, style.callouts);
+    if (!spot) {
+      notes.push(`The callout in ${c.beatId} was left out: there was no room for it without covering your face.`);
+      return [];
+    }
+    return [{ text: c.text, fromFrame: c.fromFrame, durationInFrames: c.durationInFrames, topPct: spot.topPct, align: spot.align }];
+  });
+
   const headline = plan.hook.headline;
   const hook = {
     patternBreak,
@@ -166,6 +191,10 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
       if (transitions[i].in === "cut" || cues.some((q) => q.name.startsWith("whoosh") && Math.abs(q.frame - c.fromFrame) <= style.cutaways.backToBackFrames)) return;
       cues.push({ name: i % 2 === 0 ? "whoosh2" : "whoosh1", frame: c.fromFrame, volumeDb: style.cutaways.whooshDb });
     });
+    for (const c of callouts) {
+      if (cues.some((q) => Math.abs(q.frame - c.fromFrame) <= 3)) continue;
+      cues.push({ name: pops[pop++ % 2], frame: c.fromFrame, volumeDb: style.sfxVolumeDb.pop });
+    }
     if (ending.kind === "cta") cues.push({ name: pops[pop++ % 2], frame: ending.fromFrame, volumeDb: style.sfxVolumeDb.pop });
     if (plan.sfx === "lively") {
       finalClips.forEach((c, i) => {
@@ -197,8 +226,10 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
     ...(sfx.length ? { sfx } : {}),
     ...(patternBreaks.length ? { patternBreaks } : {}),
     ...(cutaways.length ? { cutaways } : {}),
+    ...(callouts.length ? { callouts } : {}),
+    progressBar: true,
   });
-  return { timeline, voiceSegments, durationMs: framesToMs(total) };
+  return { timeline, voiceSegments, durationMs: framesToMs(total), notes };
 }
 
 function cutawayMedia(c: PlacedCutaway, plan: EditPlan, assets: FootageAssets, style: EditStyle): TimelineCutaway["media"] {

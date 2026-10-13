@@ -92,3 +92,17 @@ describe("footage data schemas", () => {
     expect(() => FaceTrackSchema.parse({ intervalMs: 0, samples: [] })).toThrow();
   });
 });
+
+describe("callouts (look pass)", () => {
+  const withCallout = (text: string) => ({ ...validEditPlan(), beats: validEditPlan().beats.map((b) => (b.id === "b2" ? { ...b, callout: { text } } : b)) });
+  it("accepts a number or 1–3 words, trimmed, in either language", () => {
+    expect(parseEditPlan(withCallout(" 1/5 ")).beats[1].callout).toEqual({ text: "1/5" });
+    expect(parseEditPlan(withCallout("חוסך שעות")).beats[1].callout).toEqual({ text: "חוסך שעות" });
+    expect(parseEditPlan(validEditPlan()).beats[1].callout).toBeUndefined();
+  });
+  it("refuses 4 words, 17 characters or an empty callout with plain messages", () => {
+    expect(() => parseEditPlan(withCallout("a b c d"))).toThrow("beats.1.callout.text: A callout is a number or 1–3 words.");
+    expect(() => parseEditPlan(withCallout("a".repeat(17)))).toThrow("beats.1.callout.text: A callout is at most 16 characters.");
+    expect(() => parseEditPlan(withCallout("  "))).toThrow(/beats\.1\.callout\.text/);
+  });
+});

@@ -91,6 +91,16 @@ export const TimelineCutawaySchema = z.object({
 });
 export type TimelineCutaway = z.infer<typeof TimelineCutawaySchema>;
 
+/** A keyword callout badge (look pass), placed by compileFootage above or beside the face. */
+export const TimelineCalloutSchema = z.object({
+  text: z.string().min(1),
+  fromFrame: z.number().int().nonnegative(),
+  durationInFrames: z.number().int().positive(),
+  topPct: z.number().min(0).max(100),
+  align: z.enum(["center", "left", "right"]),
+});
+export type TimelineCallout = z.infer<typeof TimelineCalloutSchema>;
+
 export const TimelineSchema = z.object({
   fps: z.literal(30),
   width: z.literal(1080),
@@ -123,5 +133,8 @@ export const TimelineSchema = z.object({
   sfx: z.array(z.object({ name: SfxNameSchema, frame: z.number().int().nonnegative(), src: z.string().min(1), volumeDb: z.number() })).optional(),
   patternBreaks: z.array(z.object({ frame: z.number().int().nonnegative(), kind: BreakKindSchema })).optional(),
   cutaways: z.array(TimelineCutawaySchema).optional(),
+  callouts: z.array(TimelineCalloutSchema).optional(),
+  /** Footage reels: a thin progress bar along the top edge. */
+  progressBar: z.boolean().optional(),
 });
 export type Timeline = z.infer<typeof TimelineSchema>;

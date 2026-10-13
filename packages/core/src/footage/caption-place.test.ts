@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { testEditStyle } from "../testing/fixtures";
-import { placeCaptionPages, screenChinY } from "./caption-place";
+import { placeCaptionPages, screenChinY, screenFaceRect } from "./caption-place";
 
 const P = testEditStyle().captionPlacement;
 const page = (fromFrame: number) => ({ fromFrame, durationInFrames: 30 });
@@ -33,5 +33,13 @@ describe("placeCaptionPages", () => {
   it("gives leading no-face pages the first known position, and 60 % when there is no face at all", () => {
     expect(placeCaptionPages([page(0), page(30)], [{ fromFrame: 30, endFrame: 60, chinY: 0.65 }], P)).toEqual([71, 71]);
     expect(placeCaptionPages([page(0), page(30)], [], P)).toEqual([60, 60]);
+  });
+});
+
+describe("screenFaceRect", () => {
+  it("maps the face box through the crop's zoom range onto the screen", () => {
+    const face = { x: 0.35, y: 0.2, w: 0.3, h: 0.17 };
+    expect(screenFaceRect(face, { cx: 0.5, cy: 0.4, scaleFrom: 1.25, scaleTo: 1.25 })).toEqual({ top: 0.25, bottom: 0.4625, left: 0.3125, right: 0.6875 });
+    expect(screenFaceRect(null, { cx: 0.5, cy: 0.5, scaleFrom: 1, scaleTo: 1 })).toBeNull();
   });
 });

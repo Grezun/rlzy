@@ -1,7 +1,7 @@
 import type { Cutaway, CutawaySource, EditPlan } from "../schema/edit-plan";
 import type { FootageExtra } from "../schema/footage";
 import type { CutawayTransition, Word } from "../schema/timeline";
-import { ctaStartFrame, framesToMs, msToFrames, planShots, type PlannedShot } from "./shots";
+import { beatSpans, ctaStartFrame, framesToMs, msToFrames, planShots, type PlannedShot } from "./shots";
 import type { EditStyle } from "./style";
 import { plural } from "../plural";
 
@@ -36,13 +36,7 @@ const secs = (frames: number) => (framesToMs(frames) / 1000).toFixed(1);
 export function placeCutaways(plan: Pick<EditPlan, "beats" | "hook" | "ending" | "source">, shots: PlannedShot[], style: EditStyle): CutawayPlacement {
   const total = shots.reduce((n, s) => n + s.frames, 0);
   const ctaStart = ctaStartFrame(plan, total, style);
-  const spans = new Map<string, [number, number]>();
-  let at = 0;
-  for (const s of shots) {
-    const span = spans.get(s.beatId);
-    spans.set(s.beatId, span ? [span[0], at + s.frames] : [at, at + s.frames]);
-    at += s.frames;
-  }
+  const spans = beatSpans(shots);
   const beats = new Map(plan.beats.map((b) => [b.id, b]));
   const order = [...spans.keys()].filter((id) => beats.get(id)?.cutaway);
   const pullId = plan.hook.patternBreak === "broll" ? order[0] : undefined;

@@ -60,5 +60,18 @@ export const EditStyleSchema = z.object({
     /** Whoosh level for cutaway entries (quieter than the hook's: about one every 3 s). */
     whooshDb: z.number(),
   }),
+  /** Look pass callouts: timing, and the badge box (in % of the frame) used to keep it off the face and the captions. */
+  callouts: z.object({
+    durationMs: z.number().positive(),
+    minMs: z.number().positive(),
+    /** Frames kept clear after a cutaway (its exit) and before a callout (no pattern break starts there). */
+    clearFrames: z.number().int().nonnegative(),
+    topSafePct: z.number().min(0).max(100),
+    gapPct: z.number().min(0).max(100),
+    heightPct: z.number().min(0).max(100),
+    noFaceTopPct: z.number().min(0).max(100),
+    sideWidthPct: z.number().min(0).max(100),
+    sidePadPct: z.number().min(0).max(100),
+  }),
 });
 export type EditStyle = z.infer<typeof EditStyleSchema>;

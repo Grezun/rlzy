@@ -31,6 +31,18 @@ export function orderedKeptBeats(plan: Pick<EditPlan, "beats" | "hook">): Beat[]
 
 export type PlannedShot = { id: string; beatId: string; inFrame: number; frames: number; speechFrames: number; wordIdx: number[] };
 
+/** Each beat's reel frames [first, end) over its planned shots, in reel order. */
+export function beatSpans(shots: PlannedShot[]): Map<string, [number, number]> {
+  const spans = new Map<string, [number, number]>();
+  let at = 0;
+  for (const s of shots) {
+    const span = spans.get(s.beatId);
+    spans.set(s.beatId, span ? [span[0], at + s.frames] : [at, at + s.frames]);
+    at += s.frames;
+  }
+  return spans;
+}
+
 /** Word index runs inside a beat: a gap of cutGapMs or more, or a filler (dropped), starts a new run. */
 function speechSpans(beat: Beat, words: Word[], style: EditStyle): number[][] {
   const spans: number[][] = [];

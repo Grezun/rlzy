@@ -29,6 +29,16 @@ export const CutawaySchema = z.object({
 });
 export type Cutaway = z.infer<typeof CutawaySchema>;
 
+/** Look pass: a short sticker on a beat: a number like "1/5" or 1–3 words. */
+export const CALLOUT_MAX_CHARS = 16;
+export const CalloutSchema = z.object({
+  text: z.string().trim()
+    .min(1, "A callout needs text.")
+    .max(CALLOUT_MAX_CHARS, `A callout is at most ${CALLOUT_MAX_CHARS} characters.`)
+    .refine((t) => t.split(/\s+/).length <= 3, "A callout is a number or 1–3 words."),
+});
+export type Callout = z.infer<typeof CalloutSchema>;
+
 export const BeatSchema = z.object({
   id: BeatId,
   startWordIdx: z.number().int().nonnegative(),
@@ -38,6 +48,7 @@ export const BeatSchema = z.object({
   emphasisWordIdx: z.number().int().nonnegative().optional(),
   emoji: z.string().trim().min(1).max(8).optional(),
   cutaway: CutawaySchema.optional(),
+  callout: CalloutSchema.optional(),
 });
 export type Beat = z.infer<typeof BeatSchema>;
 

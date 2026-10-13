@@ -3,6 +3,7 @@ import { ceilToCent, estimateFootageCost, estimateReelSeconds } from "../cost";
 import { TimelineSchema } from "../schema/timeline";
 import { parseEditPlan, type EditPlan } from "../schema/edit-plan";
 import { EXTRA_IMG, faceTrackFixture, fixtureExtras, footageTranscript, lowFaceTrackFixture, testEditStyle, validEditPlan } from "../testing/fixtures";
+import { planCallouts } from "./callouts";
 import { cutawayBudget, planCutaways } from "./cutaways";
 import { compileFootage, EmptyEditError, footageDurationMs, withFootageEstimate, type FootageAssets } from "./compile";
 import { framesToMs, planShots } from "./shots";
@@ -311,5 +312,60 @@ describe("cutaways", () => {
     expect(pieces[0].crop!.scaleTo).toBeCloseTo(at(3), 3); // not squeezed up to 1.242
     expect(pieces[2].crop!.scaleFrom).toBeCloseTo(at(34), 3);
     expect(pieces[2].crop!.scaleTo).toBeCloseTo(base.crop!.scaleTo, 3);
+  });
+});
+
+describe("callouts", () => {
+  const withCallouts = (texts: Record<string, string>, over: Partial<EditPlan> = {}) =>
+    plan({ beats: validEditPlan().beats.map((b) => (texts[b.id] ? { ...b, callout: { text: texts[b.id] } } : b)) as EditPlan["beats"], ...over });
+
+  it("places each callout in its beat's first free stretch, centred above the face, with a pop", () => {
+    const { timeline, notes } = compile(withCallouts({ b1: "1/5", b2: "חוסך שעות" }));
+    expect(timeline.callouts).toEqual([
+      { text: "1/5", fromFrame: 60, durationInFrames: 29, topPct: 17.5, align: "center" }, // after the headline (0–60), until b1 ends at 89
+      { text: "חוסך שעות", fromFrame: 89, durationInFrames: 48, topPct: 19.5, align: "center" },
+    ]);
+    expect(notes).toEqual([]);
+    expect(timeline.sfx?.map((c) => `${c.name}@${c.frame}`)).toEqual(["whoosh1@0", "pop1@12", "pop2@18", "pop1@60", "pop2@89", "pop1@143"]);
+  });
+
+  it("drops a callout whose beat has no free stretch, and the review page sees the same warning", () => {
+    const p = withCallouts({ b3: "AI" }); // b3 (146–218) runs under the CTA card (143–218)
+    expect(compile(p).timeline.callouts).toBeUndefined();
+    expect(planCallouts(p, transcript.words, style).warnings).toEqual(["The callout in b3 was dropped: the hook headline, a cutaway or the CTA card covers its beat."]);
+  });
+
+  it("waits for a cutaway's exit and never shares a moment with it", () => {
+    const cut = { source: { kind: "ai_broll", prompt: "laptop", media: "image" }, layout: "full", atMs: 0, durationMs: 1000 };
+    const p = plan({ hook: { patternBreak: "none", reason: "" }, beats: validEditPlan().beats.map((b) => (b.id === "b1" ? { ...b, cutaway: cut, callout: { text: "3x" } } : b)) as EditPlan["beats"] });
+    // The cutaway covers 0–30, plus 6 frames for its exit.
+    expect(planCallouts(p, transcript.words, style).placed).toEqual([{ beatId: "b1", text: "3x", fromFrame: 36, durationInFrames: 48 }]);
+    expect(compileFootage(p, transcript, faceTrackFixture(), assets, style).timeline.callouts![0].fromFrame).toBe(36);
+  });
+
+  it("keeps a callout off a zoom_hit or flash hook when there is no headline", () => {
+    for (const patternBreak of ["zoom_hit", "flash"] as const) {
+      const p = withCallouts({ b1: "3x" }, { hook: { patternBreak, reason: "" } });
+      expect(planCallouts(p, transcript.words, style).placed).toEqual([{ beatId: "b1", text: "3x", fromFrame: 6, durationInFrames: 48 }]);
+    }
+    expect(planCallouts(withCallouts({ b1: "3x" }, { hook: { patternBreak: "none", reason: "" } }), transcript.words, style).placed[0].fromFrame).toBe(0);
+  });
+
+  it("keeps pattern breaks off a callout", () => {
+    const beats = longPlan().beats.map((b) => (b.id === "b3" ? { ...b, callout: { text: "3x" } } : b));
+    const { timeline } = compileFootage(longPlan({ beats }), longTalk(), null, assets, style);
+    expect(timeline.callouts).toEqual([{ text: "3x", fromFrame: 299, durationInFrames: 48, topPct: 20, align: "center" }]);
+    expect(timeline.patternBreaks).toEqual([{ frame: 449, kind: "zoom_blur" }, { frame: 749, kind: "zoom_hit" }]);
+  });
+
+  it("leaves out a callout with no room beside a face that fills the top of the frame, with a note", () => {
+    const big = { intervalMs: 100, samples: Array.from({ length: 91 }, (_, i) => ({ tMs: i * 100, box: { x: 0.1, y: 0.05, w: 0.8, h: 0.5 } })) };
+    const { timeline, notes } = compileFootage(withCallouts({ b2: "3x" }), transcript, big, assets, style);
+    expect(timeline.callouts).toBeUndefined();
+    expect(notes).toEqual(["The callout in b2 was left out: there was no room for it without covering your face."]);
+  });
+
+  it("turns the progress bar on for footage reels", () => {
+    expect(compile().timeline.progressBar).toBe(true);
   });
 });

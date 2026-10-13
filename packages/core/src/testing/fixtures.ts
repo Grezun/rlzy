@@ -88,6 +88,7 @@ export const testEditStyle = (): EditStyle => ({
   breaks: { everyMs: 10_000, minMs: 8000, maxMs: 12_000, minShotFrames: 12, kinds: ["zoom_blur", "zoom_hit", "zoom_blur", "flash"], hitFactor: 1.2, zoomBlurFrames: 6 },
   snapFrames: 4,
   cutaways: { minMs: 1000, minSpeakerShare: 0.4, brollBreakMs: 1000, kenBurns: 1.12, driftPct: 3, contentFitRatio: 1.3, transitions: ["whip", "zoom"], backToBackFrames: 6, whooshDb: -14 },
+  callouts: { durationMs: 1600, minMs: 800, clearFrames: 6, topSafePct: 9, gapPct: 2, heightPct: 7, noFaceTopPct: 20, sideWidthPct: 53, sidePadPct: 4 },
 });
 
 /** The first real reel's framing (camera below the face): the face sits low, chin at y 0.7. */

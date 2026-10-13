@@ -24,6 +24,27 @@ export function screenChinY(face: FaceBox | null, crop: TimelineCrop): number | 
   return r4(lowest);
 }
 
+/** A box on screen, normalised (0–1, origin top-left). */
+export type ScreenRect = { top: number; bottom: number; left: number; right: number };
+
+/** The face's on-screen box over the crop's zoom range (same maths as screenChinY), for callout placement. */
+export function screenFaceRect(face: FaceBox | null, crop: TimelineCrop): ScreenRect | null {
+  if (!face) return null;
+  const r = { top: Infinity, bottom: -Infinity, left: Infinity, right: -Infinity };
+  for (const raw of [crop.scaleFrom, crop.scaleTo]) {
+    const s = Math.max(1, raw);
+    const half = 0.5 / s;
+    const clamp = (v: number) => Math.min(1 - half, Math.max(half, v));
+    const cx = clamp(crop.cx);
+    const cy = clamp(crop.cy);
+    r.top = Math.min(r.top, 0.5 + (face.y - cy) * s);
+    r.bottom = Math.max(r.bottom, 0.5 + (face.y + face.h - cy) * s);
+    r.left = Math.min(r.left, 0.5 + (face.x - cx) * s);
+    r.right = Math.max(r.right, 0.5 + (face.x + face.w - cx) * s);
+  }
+  return { top: r4(r.top), bottom: r4(r.bottom), left: r4(r.left), right: r4(r.right) };
+}
+
 /**
  * Pill centre per page, in % of the height (spec §6 PillCaptions, tuned by plan 2 Task 1). One value per page, so a
  * page never moves while it shows. Split pages sit on the seam. Small moves (< holdPct) keep the previous position;

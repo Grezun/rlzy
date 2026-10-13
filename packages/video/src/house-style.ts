@@ -46,6 +46,10 @@ export const houseStyle = {
     snapFrames: 4,
     // spec §5.5: ≥ 40 % shows the speaker; §5.7: B-roll break 1 s; look pass: stills +12 % with a 3 % drift, whip/zoom entries, quieter whooshes
     cutaways: { minMs: 1000, minSpeakerShare: 0.4, brollBreakMs: 1000, kenBurns: 1.12, driftPct: 3, contentFitRatio: 1.3, transitions: ["whip", "zoom"], backToBackFrames: 6, whooshDb: -14 },
+    // 9 %: below Instagram's top bar (Reels title, camera). 7 %: a 52 px badge with padding and tilt ≈ 120 px.
+    // 53 %: 48 % for 16 characters at 52 px, plus the 19 % spring overshoot about the badge centre.
+    // Captions sit below the face, so a badge above or beside the face never meets them.
+    callouts: { durationMs: 1600, minMs: 800, clearFrames: 6, topSafePct: 9, gapPct: 2, heightPct: 7, noFaceTopPct: 20, sideWidthPct: 53, sidePadPct: 4 },
   } satisfies EditStyle,
   captions: {
     topPct: 45, // only when a page has no position
