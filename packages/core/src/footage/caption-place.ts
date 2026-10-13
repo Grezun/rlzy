@@ -46,6 +46,23 @@ export function screenFaceRect(face: FaceBox | null, crop: TimelineCrop): Screen
 }
 
 /**
+ * The hook headline's top edge (% of the height), never over the face's on-screen box (which runs to the chin, so the
+ * mouth is inside it): the preferred topPct when the face ends above it; else just below the chin when the headline
+ * still ends by bottomPct (the caption band's bottom); else just above the head when it starts by topSafePct.
+ * Rounded to 0.5 % away from the face. A face too big for either: the top band, over the forehead rather than the
+ * mouth, with clear false. No face: topPct.
+ */
+export function headlineSpot(face: ScreenRect | null, hasSmall: boolean, p: EditStyle["headline"]): { topPct: number; clear: boolean } {
+  if (!face) return { topPct: p.topPct, clear: true };
+  const h = hasSmall ? p.heightPct : p.bigOnlyHeightPct;
+  const below = Math.max(p.topPct, Math.ceil((face.bottom * 100 + p.gapPct) * 2) / 2);
+  if (below + h <= p.bottomPct) return { topPct: below, clear: true };
+  const above = Math.floor((face.top * 100 - p.gapPct - h) * 2) / 2;
+  if (above >= p.topSafePct) return { topPct: above, clear: true };
+  return { topPct: p.topSafePct, clear: false };
+}
+
+/**
  * Pill centre per page, in % of the height (spec §6 PillCaptions, tuned by plan 2 Task 1). One value per page, so a
  * page never moves while it shows. Split pages sit on the seam. Small moves (< holdPct) keep the previous position;
  * pages with no face keep the previous page's position (the first known one for leading pages).

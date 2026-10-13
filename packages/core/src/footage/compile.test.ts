@@ -71,7 +71,7 @@ describe("compileFootage", () => {
 
   it("adds the hook: headline over 0–2 s and a zoom hit on the first shot", () => {
     const { timeline } = compile();
-    expect(timeline.hook).toEqual({ patternBreak: "zoom_hit", headline: { small: "הטריק ש", big: "חוסך שעות", fromFrame: 0, durationInFrames: 60 } });
+    expect(timeline.hook).toEqual({ patternBreak: "zoom_hit", headline: { small: "הטריק ש", big: "חוסך שעות", fromFrame: 0, durationInFrames: 60, topPct: 58 } });
     expect(timeline.clips[0].crop).toMatchObject({ scaleFrom: 1, scaleTo: 1.3, punchFrames: 6 });
   });
 
@@ -312,6 +312,29 @@ describe("cutaways", () => {
     expect(pieces[0].crop!.scaleTo).toBeCloseTo(at(3), 3); // not squeezed up to 1.242
     expect(pieces[2].crop!.scaleFrom).toBeCloseTo(at(34), 3);
     expect(pieces[2].crop!.scaleTo).toBeCloseTo(base.crop!.scaleTo, 3);
+  });
+});
+
+describe("hook headline placement", () => {
+  /** A close-up: the face fills the middle of the frame, so the zoom hit's punch-in puts the mouth where the headline used to sit (58 %). */
+  const closeUp = { intervalMs: 100, samples: Array.from({ length: 91 }, (_, i) => ({ tMs: i * 100, box: { x: 0.3, y: 0.3, w: 0.4, h: 0.3 } })) };
+
+  it("moves the headline above the head when the punched-in face leaves no room below the chin", () => {
+    const { timeline, notes } = compile(plan(), closeUp);
+    // Face on screen over 0–60 (zoom hit 1 → 1.3, then b1-2's push-in): 30 %–69.5 %. 69.5 + 2 + 15 > 75, so above: 30 − 2 − 15.
+    expect(timeline.hook!.headline!.topPct).toBe(13);
+    const face = { top: 0.3, bottom: 0.695 };
+    const h = timeline.hook!.headline!;
+    expect(h.topPct! / 100 + style.headline.heightPct / 100).toBeLessThanOrEqual(face.top);
+    expect(notes).toEqual([]);
+  });
+
+  it("keeps the preferred spot with no face track, and notes a face too big to clear", () => {
+    expect(compile(plan(), null as never).timeline.hook!.headline!.topPct).toBe(58);
+    const huge = { intervalMs: 100, samples: Array.from({ length: 91 }, (_, i) => ({ tMs: i * 100, box: { x: 0.1, y: 0.12, w: 0.8, h: 0.62 } })) };
+    const { timeline, notes } = compile(plan({ hook: { ...validEditPlan().hook, patternBreak: "none" } }), huge);
+    expect(timeline.hook!.headline!.topPct).toBe(9);
+    expect(notes).toEqual(["Your face fills the frame in the hook, so the headline sits at the top, over your forehead, to keep your mouth clear."]);
   });
 });
 

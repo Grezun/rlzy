@@ -10,8 +10,8 @@ const h = houseStyle.headline;
 const wf = houseStyle.edit.headlineWordFrames;
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean);
 
-/** Small line on the caption glass, big words in white on a tilted red sticker; words pop in one by one (spec §5.7). */
-const Headline: React.FC<{ small: string; big: string; direction: Timeline["direction"] }> = ({ small, big, direction }) => {
+/** Small line on the caption glass, big words in white on a tilted red sticker; words pop in one by one (spec §5.7). topPct (its top edge) comes from compileFootage, off the face. */
+const Headline: React.FC<{ small: string; big: string; topPct: number; direction: Timeline["direction"] }> = ({ small, big, topPct, direction }) => {
   const frame = useCurrentFrame();
   const smallWords = words(small);
   const bigWords = words(big);
@@ -27,7 +27,7 @@ const Headline: React.FC<{ small: string; big: string; direction: Timeline["dire
   return (
     <div
       dir={direction}
-      style={{ position: "absolute", top: `${h.topPct}%`, left: 40, right: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 18, textAlign: "center", direction, fontFamily: HEEBO, color: h.color, lineHeight: 1.1 }}
+      style={{ position: "absolute", top: `${topPct}%`, left: 40, right: 40, display: "flex", flexDirection: "column", alignItems: "center", gap: 18, textAlign: "center", direction, fontFamily: HEEBO, color: h.color, lineHeight: 1.1 }}
     >
       {smallWords.length > 0 ? (
         <div style={{ ...glassStyle(houseStyle.captions.glass), borderRadius: houseStyle.captions.radius, padding: "8px 30px", fontSize: h.smallSize, fontWeight: h.smallWeight, opacity: shown > 0 ? 1 : 0 }}>
@@ -53,7 +53,7 @@ export const HookHeadline: React.FC<{ timeline: Timeline }> = ({ timeline }) => 
   return (
     <AbsoluteFill>
       <Sequence from={headline.fromFrame} durationInFrames={headline.durationInFrames} layout="none">
-        <Headline small={headline.small} big={headline.big} direction={timeline.direction} />
+        <Headline small={headline.small} big={headline.big} topPct={headline.topPct ?? h.topPct} direction={timeline.direction} />
       </Sequence>
     </AbsoluteFill>
   );

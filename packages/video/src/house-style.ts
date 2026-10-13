@@ -41,6 +41,10 @@ export const houseStyle = {
     // 55 %: always below mid-frame, so the pill never crosses a face in the upper half. 72 %: the pill's bottom
     // (74.8 %) stays above Instagram's caption/username/audio rows (the lowest ≈ 22 %). 50 %: the split seam (ref).
     captionPlacement: { minTopPct: 55, maxTopPct: 72, chinGapPct: 3, pillHalfPct: 2.8, holdPct: 3, noFaceTopPct: 60, seamTopPct: 50 },
+    // Measured on the rendered headline (work/stills/footage-headline-only-*.png): glass line + gap + tilted sticker
+    // ≈ 280 px = 14.6 % with the small line, ≈ 195 px = 10.2 % without. 75 %: the caption band's bottom (pills end at
+    // 74.8 %, above Instagram's bottom rows). 9 %: below the progress bar and Instagram's top row, as for callouts.
+    headline: { topPct: 58, heightPct: 15, bigOnlyHeightPct: 10.5, gapPct: 2, topSafePct: 9, bottomPct: 75 },
     // One visible break every ≈ 10 s (8–12 s): the first reel had a single break at 0 s and read as static.
     breaks: { everyMs: 10_000, minMs: 8000, maxMs: 12_000, minShotFrames: 12, kinds: ["zoom_blur", "zoom_hit", "zoom_blur", "flash"], hitFactor: 1.2, zoomBlurFrames: 6 },
     snapFrames: 4,

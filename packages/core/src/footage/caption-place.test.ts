@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { testEditStyle } from "../testing/fixtures";
-import { placeCaptionPages, screenChinY, screenFaceRect } from "./caption-place";
+import { headlineSpot, placeCaptionPages, screenChinY, screenFaceRect } from "./caption-place";
 
 const P = testEditStyle().captionPlacement;
 const page = (fromFrame: number) => ({ fromFrame, durationInFrames: 30 });
@@ -41,5 +41,25 @@ describe("screenFaceRect", () => {
     const face = { x: 0.35, y: 0.2, w: 0.3, h: 0.17 };
     expect(screenFaceRect(face, { cx: 0.5, cy: 0.4, scaleFrom: 1.25, scaleTo: 1.25 })).toEqual({ top: 0.25, bottom: 0.4625, left: 0.3125, right: 0.6875 });
     expect(screenFaceRect(null, { cx: 0.5, cy: 0.5, scaleFrom: 1, scaleTo: 1 })).toBeNull();
+  });
+});
+
+describe("headlineSpot", () => {
+  const H = testEditStyle().headline; // 15 % tall (10.5 % big only), 2 % gap, 9 %–75 % band, 58 % preferred
+  const face = (top: number, bottom: number) => ({ top, bottom, left: 0.3, right: 0.7 });
+  it("keeps the preferred spot with no face, or when the face ends above it", () => {
+    expect(headlineSpot(null, true, H)).toEqual({ topPct: 58, clear: true });
+    expect(headlineSpot(face(0.2, 0.48), true, H)).toEqual({ topPct: 58, clear: true });
+  });
+  it("goes just below the chin when it still ends above the caption band's bottom", () => {
+    expect(headlineSpot(face(0.3, 0.571), true, H)).toEqual({ topPct: 59.5, clear: true }); // 59.1 rounded away from the chin
+    expect(headlineSpot(face(0.3, 0.6), false, H)).toEqual({ topPct: 62, clear: true }); // big words only: 10.5 % tall
+  });
+  it("goes above the head when there is no room below the chin (a punched-in close-up)", () => {
+    expect(headlineSpot(face(0.3, 0.6), true, H)).toEqual({ topPct: 13, clear: true });
+    expect(headlineSpot(face(0.303, 0.695), false, H)).toEqual({ topPct: 17.5, clear: true }); // 17.8 rounded away from the head
+  });
+  it("never covers the mouth: with no room either side it takes the top band (forehead, not mouth) and says so", () => {
+    expect(headlineSpot(face(0.15, 0.7), true, H)).toEqual({ topPct: 9, clear: false });
   });
 });

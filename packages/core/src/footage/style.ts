@@ -32,6 +32,19 @@ export const EditStyleSchema = z.object({
     noFaceTopPct: z.number().min(0).max(100),
     seamTopPct: z.number().min(0).max(100),
   }),
+  /**
+   * Hook headline box (top edge in % of the height; heights with and without the small line), kept off the face
+   * (including the mouth) over the hook's zoom: topPct when the face ends above it, else just below the chin when it
+   * ends by bottomPct, else just above the head when it starts by topSafePct.
+   */
+  headline: z.object({
+    topPct: z.number().min(0).max(100),
+    heightPct: z.number().min(0).max(100),
+    bigOnlyHeightPct: z.number().min(0).max(100),
+    gapPct: z.number().min(0).max(100),
+    topSafePct: z.number().min(0).max(100),
+    bottomPct: z.number().min(0).max(100),
+  }),
   /** Recurring pattern breaks after the hook: one every everyMs (window minMs–maxMs), at cuts. */
   breaks: z.object({
     everyMs: z.number().positive(),

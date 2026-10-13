@@ -123,7 +123,8 @@ export const TimelineSchema = z.object({
   overlays: z.array(TimelineOverlaySchema),
   hook: z.object({
     patternBreak: z.enum(["zoom_hit", "flash", "broll", "none"]),
-    headline: z.object({ small: z.string(), big: z.string().min(1), fromFrame: z.number().int().nonnegative(), durationInFrames: z.number().int().positive() }).optional(),
+    /** topPct: the headline's top edge in % of the height, placed off the face by compileFootage (absent: the component's default). */
+    headline: z.object({ small: z.string(), big: z.string().min(1), fromFrame: z.number().int().nonnegative(), durationInFrames: z.number().int().positive(), topPct: z.number().min(0).max(100).optional() }).optional(),
   }).optional(),
   ending: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("cta"), keyword: z.string().min(1), fromFrame: z.number().int().nonnegative(), durationInFrames: z.number().int().positive() }),

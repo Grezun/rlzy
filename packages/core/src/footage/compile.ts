@@ -4,7 +4,7 @@ import type { EditPlan } from "../schema/edit-plan";
 import type { FaceBox, FaceTrack, Transcript } from "../schema/footage";
 import { TimelineSchema, type SfxName, type Timeline, type TimelineClip, type TimelineCrop, type TimelineCutaway, type Word } from "../schema/timeline";
 import { calloutSpot, placeCallouts } from "./callouts";
-import { placeCaptionPages, screenChinY, screenFaceRect, type FaceSpan, type ScreenRect } from "./caption-place";
+import { headlineSpot, placeCaptionPages, screenChinY, screenFaceRect, type FaceSpan, type ScreenRect } from "./caption-place";
 import { addSnaps, applyBreaks, pickBreaks } from "./breaks";
 import { pageWords, type ReelWord } from "./captions";
 import { cutawayFit, cutawayTransitions, placeCutaways, type PlacedCutaway } from "./cutaways";
@@ -14,7 +14,7 @@ import type { EditStyle } from "./style";
 
 export type FootageAssets = { videoSrc: string; voiceSrc?: string; musicSrc?: string; sfx: Partial<Record<SfxName, string>>; cutaways?: Record<string, { kind: "image" | "video"; src: string }> };
 export type VoiceSegment = { inMs: number; outMs: number };
-/** notes: callouts left out because no spot avoided the face (generation adds them to its notes). */
+/** notes: callouts left out because no spot avoided the face, or a headline that could not clear it (generation adds them to its notes). */
 export type CompiledFootage = { timeline: Timeline; voiceSegments: VoiceSegment[]; durationMs: number; notes: string[] };
 
 export class EmptyEditError extends Error {
@@ -148,15 +148,21 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
   const placedPages = pages.map((p, i) => ({ ...p, topPct: tops[i] }));
 
   const notes: string[] = [];
-  const callouts = calloutPlan.placed.flatMap((c) => {
-    const end = c.fromFrame + c.durationInFrames;
+  /** The face's on-screen box over [from, end): every clip there, over each clip's zoom range (punch-ins included). */
+  const faceOver = (from: number, end: number): ScreenRect | null => {
     const rects = finalClips
-      .flatMap((clip, i) => (clip.fromFrame < end && clip.fromFrame + clip.durationInFrames > c.fromFrame ? [screenFaceRect(finalFaces[i], clip.crop!)] : []))
+      .flatMap((clip, i) => (clip.fromFrame < end && clip.fromFrame + clip.durationInFrames > from ? [screenFaceRect(finalFaces[i], clip.crop!)] : []))
       .filter((r): r is ScreenRect => r !== null);
-    const face = rects.length
+    return rects.length
       ? { top: Math.min(...rects.map((r) => r.top)), bottom: Math.max(...rects.map((r) => r.bottom)), left: Math.min(...rects.map((r) => r.left)), right: Math.max(...rects.map((r) => r.right)) }
       : null;
-    const spot = calloutSpot(face, style.callouts);
+  };
+  const headline = plan.hook.headline;
+  const headlineFrames = Math.min(total, msToFrames(style.headlineMs));
+  const headlineAt = headline ? headlineSpot(faceOver(0, headlineFrames), splitWords(headline.small).length > 0, style.headline) : null;
+  if (headlineAt && !headlineAt.clear) notes.push("Your face fills the frame in the hook, so the headline sits at the top, over your forehead, to keep your mouth clear.");
+  const callouts = calloutPlan.placed.flatMap((c) => {
+    const spot = calloutSpot(faceOver(c.fromFrame, c.fromFrame + c.durationInFrames), style.callouts);
     if (!spot) {
       notes.push(`The callout in ${c.beatId} was left out: there was no room for it without covering your face.`);
       return [];
@@ -164,10 +170,9 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
     return [{ text: c.text, fromFrame: c.fromFrame, durationInFrames: c.durationInFrames, topPct: spot.topPct, align: spot.align }];
   });
 
-  const headline = plan.hook.headline;
   const hook = {
     patternBreak,
-    ...(headline ? { headline: { small: headline.small, big: headline.big, fromFrame: 0, durationInFrames: Math.min(total, msToFrames(style.headlineMs)) } } : {}),
+    ...(headline && headlineAt ? { headline: { small: headline.small, big: headline.big, fromFrame: 0, durationInFrames: headlineFrames, topPct: headlineAt.topPct } } : {}),
   };
   const ctaFrames = Math.min(total, msToFrames(style.ctaMs));
   const ending =
