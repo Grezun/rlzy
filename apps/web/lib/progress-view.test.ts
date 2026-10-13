@@ -43,4 +43,10 @@ describe("describeJob", () => {
     expect(describeJob({ type: "generate_footage", status: "done", progress: {}, error: null }, [])).toMatchObject({ headline: "Your reel is ready.", tone: "success", notes: [] });
     expect(describeJob({ type: "plan_footage", status: "running", progress: {}, error: null }, [])!.headline).toBe("Claude is re-planning the edit…");
   });
+  it("lists the cutaway step of footage generation", () => {
+    const v = describeJob({ type: "generate_footage", status: "running", progress: { steps: { voice: "done", music: "done", visuals: "running" }, scenes: {}, notes: [] }, error: null }, []);
+    expect(v!.steps.map((s) => [s.key, s.label, s.state])).toEqual([
+      ["voice", "Cut audio", "done"], ["music", "Music", "done"], ["visuals", "Cutaways", "running"], ["render", "Render", "pending"], ["export", "Export", "pending"],
+    ]);
+  });
 });

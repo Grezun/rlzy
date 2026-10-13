@@ -28,6 +28,16 @@ describe("editPlan", () => {
     expect(saved.hook.headline).toBeUndefined();
     expect(saved).toMatchObject({ hook: { patternBreak: "flash" }, ending: { kind: "loop" }, music: { kind: "ai", prompt: "upbeat pop" }, sfx: "lively" });
   });
+  it("sets and clears a cutaway and the character; saving trims prompts and empty diagram items", () => {
+    const c = { source: { kind: "diagram" as const, template: "list" as const, items: [" אחת ", "", "שתיים"] }, layout: "full" as const, atMs: 0, durationMs: 1500 };
+    let p = editPlan(parseEditPlan(validEditPlan()), { type: "setCutaway", beatId: "b2", cutaway: c });
+    p = editPlan(p, { type: "setCharacter", character: { id: "7c9e6679-7425-40de-944b-e07fc1f90ae7", name: "Alex" } });
+    expect(normalizePlanForSave(p).beats[1].cutaway!.source).toEqual({ kind: "diagram", template: "list", items: ["אחת", "שתיים"] });
+    expect(p.character?.name).toBe("Alex");
+    p = editPlan(editPlan(p, { type: "setCutaway", beatId: "b2", cutaway: null }), { type: "setCharacter", character: null });
+    expect(p.beats[1].cutaway).toBeUndefined();
+    expect(p.character).toBeUndefined();
+  });
 });
 
 describe("checkEditPlan", () => {

@@ -6,12 +6,14 @@ import { useMemo, useReducer, useState, useTransition } from "react";
 import {
   approvePlanAction, newPlanVersionAction, replanAction, retryFootageGenerateAction, retryIngestAction, savePlanAction,
 } from "@/app/projects/[id]/footage-actions";
+import { CutawayEditor } from "@/components/CutawayEditor";
+import { placementWarnings } from "@/lib/cutaway-edit";
 import { checkEditPlan, describeFootageLength, editPlan, normalizePlanForSave } from "@/lib/edit-plan-edit";
 
 export type LibraryTrack = { id: string; title: string; mood: string };
 type Result = { ok: true } | { ok: false; errors: string[] };
 
-const PATTERN_BREAKS = [["zoom_hit", "Zoom hit"], ["flash", "Flash"], ["none", "None"]] as const;
+const PATTERN_BREAKS = [["zoom_hit", "Zoom hit"], ["flash", "Flash"], ["broll", "B-roll (first cutaway)"], ["none", "None"]] as const;
 const SFX = [["off", "Off"], ["subtle", "Subtle"], ["lively", "Lively"]] as const;
 const ENDINGS = [["cta", "CTA"], ["loop", "Loop"], ["none", "None"]] as const;
 const RED = "#E5262A";
@@ -23,6 +25,7 @@ type Props = {
   initial: EditPlan;
   words: Word[];
   library: LibraryTrack[];
+  characters: { id: string; name: string }[];
   editable: boolean;
   canReplan: boolean;
   canRetry: boolean;
@@ -47,7 +50,7 @@ function useAction() {
 
 const musicValue = (m: EditPlan["music"]) => (m.kind === "library" ? `lib:${m.assetId}` : m.kind);
 
-export function FootagePlanEditor({ projectId, storyboardId, initial, words, library, editable, canReplan, canRetry }: Props) {
+export function FootagePlanEditor({ projectId, storyboardId, initial, words, library, characters, editable, canReplan, canRetry }: Props) {
   const [plan, dispatch] = useReducer(editPlan, initial);
   const [instruction, setInstruction] = useState("");
   // Remembered so switching music or ending away and back doesn't lose what the user typed.
@@ -68,6 +71,7 @@ export function FootagePlanEditor({ projectId, storyboardId, initial, words, lib
       return null;
     }
   }, [plan, words, style]);
+  const placement = useMemo(() => placementWarnings(normalizePlanForSave(plan), words, style), [plan, words, style]);
   const problems = [...(check.ok ? [] : check.errors), ...(empty ? [new EmptyEditError().message] : [])];
   const beatWords = (b: EditPlan["beats"][number]) => words.slice(b.startWordIdx, b.endWordIdx + 1);
   const preview = (b: EditPlan["beats"][number]) => {
@@ -96,6 +100,12 @@ export function FootagePlanEditor({ projectId, storyboardId, initial, words, lib
         </div>
       </div>
       {plan.warnings.length > 0 && <ul className="warn">{plan.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
+      {placement.length > 0 && (
+        <div className="warn">
+          <strong>Cutaway placement:</strong>
+          <ul>{placement.map((w, i) => <li key={i}>{w}</li>)}</ul>
+        </div>
+      )}
 
       <fieldset disabled={!editable} className="stack" style={{ border: 0, padding: 0, margin: 0 }}>
         <article className="card stack">
@@ -108,7 +118,7 @@ export function FootagePlanEditor({ projectId, storyboardId, initial, words, lib
               </select>
             </label>
             <label>Pattern break
-              <select value={plan.hook.patternBreak} onChange={(e) => dispatch({ type: "setPatternBreak", value: e.target.value as "zoom_hit" | "flash" | "none" })}>
+              <select value={plan.hook.patternBreak} onChange={(e) => dispatch({ type: "setPatternBreak", value: e.target.value as "zoom_hit" | "flash" | "broll" | "none" })}>
                 {PATTERN_BREAKS.map(([v, label]) => <option key={v} value={v}>{label}</option>)}
               </select>
             </label>
@@ -162,6 +172,7 @@ export function FootagePlanEditor({ projectId, storyboardId, initial, words, lib
                 </label>
                 {!beat.keep && beat.dropReason && <span className="muted" dir="auto">Dropped: {beat.dropReason}</span>}
               </div>
+              <CutawayEditor plan={plan} cutaway={beat.cutaway} onChange={(c) => dispatch({ type: "setCutaway", beatId: beat.id, cutaway: c })} />
             </article>
           );
         })}
@@ -169,6 +180,22 @@ export function FootagePlanEditor({ projectId, storyboardId, initial, words, lib
         <article className="card stack">
           <strong>Settings</strong>
           <p className="muted" style={{ margin: 0 }}>Background: original</p>
+          <div className="row">
+            <label>Character
+              <select
+                value={plan.character?.id ?? ""}
+                onChange={(e) => {
+                  const c = characters.find((x) => x.id === e.target.value);
+                  dispatch({ type: "setCharacter", character: c ? { id: c.id, name: c.name } : null });
+                }}
+              >
+                <option value="">None</option>
+                {plan.character && !characters.some((c) => c.id === plan.character?.id) && <option value={plan.character.id}>{plan.character.name}</option>}
+                {characters.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+          </div>
+          {characters.length === 0 && <span className="muted">Add a character on the Characters page for AI shots of you.</span>}
           <div className="row">
             <label>Music
               <select value={musicValue(plan.music)} onChange={(e) => onMusicChange(e.target.value)}>
@@ -213,7 +240,7 @@ export function FootagePlanEditor({ projectId, storyboardId, initial, words, lib
             <button type="button" className="primary" disabled={pending || problems.length > 0} onClick={() => act(() => approvePlanAction(projectId, storyboardId, plan))}>
               Approve &amp; render
             </button>
-            <span className="muted">Approving may spend ElevenLabs credits for AI music.</span>
+            <span className="muted">Approving may spend Higgsfield credits for AI cutaways and ElevenLabs credits for AI music, up to the estimate above.</span>
           </div>
           {canReplan && (
             <div className="row">

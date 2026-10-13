@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { footageTranscript, validEditPlan } from "../../../packages/core/src/testing/fixtures";
 import { approvePlan, newPlanVersion, replan, retryFootageGenerate, retryIngest, savePlan, type PlanWriteDeps } from "./approve-plan";
 
+const CHAR = "7c9e6679-7425-40de-944b-e07fc1f90ae7";
 const SB = "9a1b2c3d-1111-4222-8333-444455556666";
 const stored = () => parseEditPlan(validEditPlan());
 type Row = Awaited<ReturnType<PlanWriteDeps["getStoryboard"]>>;
@@ -21,6 +22,7 @@ function deps(over: Partial<PlanWriteDeps> = {}): PlanWriteDeps & { queued: unkn
     hasDoneGenerate: vi.fn(async () => false),
     maxVersion: vi.fn(async () => 1),
     projectStatus: vi.fn(async () => "failed" as const),
+    getCharacter: vi.fn(async (id: string) => (id === CHAR ? { id, name: "Alex (from DB)" } : null)),
     ingestPayload: vi.fn(async () => ({ storagePath: "footage/x/source.mp4", settings: { language: "he" as const, targetDurationSec: 15 as const, notes: "קצר" }, extras: [] })),
     insertDraft: vi.fn(async (_p, _v, json) => { inserted.push(json); }),
     ...over,
@@ -48,6 +50,16 @@ describe("savePlan / approvePlan", () => {
     expect(await approvePlan(d, { projectId: "p1", storyboardId: SB, json: stored() })).toEqual({ ok: true });
     expect(d.queued).toEqual([["generate_footage", { storyboardId: SB }]]);
     expect(d.setProjectStatus).toHaveBeenCalledWith("p1", "generating");
+  });
+  it("takes the character's name from the database and refuses a character that no longer exists", async () => {
+    const d = deps();
+    const shot = { source: { kind: "ai_self", prompt: "the person on a plane", media: "image" }, layout: "full", atMs: 0, durationMs: 1000 };
+    const client = (id: string) => ({ ...stored(), character: { id, name: "typed by the client" }, beats: stored().beats.map((b) => (b.id === "b2" ? { ...b, cutaway: shot } : b)) });
+    expect(await savePlan(d, { projectId: "p1", storyboardId: SB, json: client(CHAR) })).toEqual({ ok: true });
+    expect(d.written[0].character).toEqual({ id: CHAR, name: "Alex (from DB)" });
+    expect(d.written[0].estimate.credits).toBe(0.04);
+    expect(await savePlan(d, { projectId: "p1", storyboardId: SB, json: client("11111111-2222-4333-8444-555555555555") }))
+      .toEqual({ ok: false, errors: ["The character you picked no longer exists. Pick another one or remove the AI shots of you."] });
   });
   it("refuses while a job is running", async () => {
     const r = await approvePlan(deps({ activeJobCount: async () => 1 }), { projectId: "p1", storyboardId: SB, json: stored() });
@@ -92,6 +104,24 @@ describe("replan / retryIngest", () => {
     expect(await replan(d, { projectId: "p1", storyboardId: SB, instruction: " tighten to 15 s " })).toEqual({ ok: true });
     expect(d.queued).toEqual([["plan_footage", { settings: { language: "he", targetDurationSec: 15, notes: "קצר" }, source: stored().source, fromStoryboardId: SB, instruction: "tighten to 15 s" }]]);
     expect(d.setProjectStatus).toHaveBeenCalledWith("p1", "planning");
+  });
+  it("Re-plan follows the plan's character, not the one picked at upload", async () => {
+    const upload = { storagePath: "footage/x/source.mp4", settings: { language: "he" as const, targetDurationSec: 15 as const, characterId: "11111111-2222-4333-8444-555555555555" }, extras: [] };
+    const row = (json: unknown): Row => ({ projectId: "p1", version: 1, status: "draft", json });
+    const settingsOf = (d: { queued: unknown[] }) => (d.queued[0] as [string, { settings: unknown }])[1].settings;
+    const changed = deps({ ingestPayload: async () => upload, getStoryboard: async () => row({ ...stored(), character: { id: CHAR, name: "Alex" } }) });
+    expect(await replan(changed, { projectId: "p1", storyboardId: SB, instruction: "" })).toEqual({ ok: true });
+    expect(settingsOf(changed)).toEqual({ language: "he", targetDurationSec: 15, characterId: CHAR });
+    const removed = deps({ ingestPayload: async () => upload });
+    expect(await replan(removed, { projectId: "p1", storyboardId: SB, instruction: "" })).toEqual({ ok: true });
+    expect(settingsOf(removed)).toEqual({ language: "he", targetDurationSec: 15 });
+  });
+  it("retryIngest re-queues the stored ingest payload with its extras intact", async () => {
+    const extras = [{ storagePath: "footage/9a1b2c3d-1111-4222-8333-444455556666/extra-1.png", label: "screenshot" }, { storagePath: "footage/9a1b2c3d-1111-4222-8333-444455556666/extra-2.mp4", label: "demo" }];
+    const payload = { storagePath: "footage/x/source.mp4", settings: { language: "he" as const, targetDurationSec: 15 as const }, extras };
+    const d = deps({ maxVersion: async () => 0, ingestPayload: async () => payload });
+    expect(await retryIngest(d, { projectId: "p1" })).toEqual({ ok: true });
+    expect(d.queued).toEqual([["ingest_footage", payload]]);
   });
   it("refuses a Re-plan of an old version", async () => {
     const r = await replan(deps({ maxVersion: async () => 2 }), { projectId: "p1", storyboardId: SB, instruction: "" });

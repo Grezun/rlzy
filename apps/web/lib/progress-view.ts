@@ -19,7 +19,7 @@ type StepKey = keyof ReturnType<typeof emptyProgress>["steps"];
 const STEPS: Record<string, [StepKey, string][]> = {
   generate: [["voice", "Voice"], ["visuals", "Visuals"], ["render", "Render"], ["export", "Export"]],
   ingest_footage: [["conform", "Prepare video"], ["faces", "Find face"], ["transcribe", "Transcribe"], ["plan", "Plan the edit"]],
-  generate_footage: [["voice", "Cut audio"], ["music", "Music"], ["render", "Render"], ["export", "Export"]],
+  generate_footage: [["voice", "Cut audio"], ["music", "Music"], ["visuals", "Cutaways"], ["render", "Render"], ["export", "Export"]],
 };
 
 const PLAN_HEADLINES: Record<string, [string, ProgressView["tone"]]> = {

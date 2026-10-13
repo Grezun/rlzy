@@ -29,6 +29,10 @@
 
 8. The sound-effect pack in `packages/video/assets/sfx/` is generated once with `npm run sfx:generate -- --yes` (paid; listen before committing). Without it, real reels render without sound effects and say so.
 
+9. Cutaways (footage reels): AI B-roll and AI shots of you are made on Higgsfield after you approve. On the Starter plan (about 2 concurrent jobs) set `HF_CONCURRENCY=2` in `.env.local`.
+
+10. AI shots of you need a character: train a Soul ID once with the `higgsfield-soul-id` flow (paid, 5–20 photos), then add its name and reference id on the Characters page. Pick the character on "Edit my video" (or in the edit plan's Settings).
+
 ## Every day
 
 - `npm run web`: the app on http://localhost:3000
@@ -56,3 +60,5 @@ Add a file under `supabase/migrations/`, apply it, regenerate `packages/db/src/d
 ## How it fits together
 
 Browser → Next.js (reads/writes rows as the signed-in user, under RLS) → `jobs` table → worker (secret key) → Claude / Higgsfield / ElevenLabs → FFmpeg + Remotion → Supabase Storage → Realtime updates back to the browser.
+
+The fake worker also makes cutaways for free (coloured stills and test clips); real workers never reuse them because their cache keys include the model.

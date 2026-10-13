@@ -19,6 +19,11 @@ function deps(sb: Client): PlanWriteDeps {
       const parsed = IngestFootageJobPayloadSchema.safeParse(data?.payload);
       return parsed.success ? parsed.data : null;
     },
+    async getCharacter(id) {
+      const { data, error } = await sb.from("soul_characters").select("id, name").eq("id", id).maybeSingle();
+      if (error) throw new Error(`character lookup: ${error.message}`);
+      return data;
+    },
     async projectStatus(projectId) {
       const { data, error } = await sb.from("projects").select("status").eq("id", projectId).maybeSingle();
       if (error) throw new Error(`project lookup: ${error.message}`);

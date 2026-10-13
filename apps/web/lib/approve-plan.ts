@@ -18,6 +18,8 @@ export interface PlanWriteDeps extends Omit<DraftWriteDeps<EditPlan>, "queueGene
   ingestPayload(projectId: string): Promise<IngestFootagePayload | null>;
   /** The project's current status, or null if it isn't visible. */
   projectStatus(projectId: string): Promise<ProjectStatus | null>;
+  /** A saved Soul ID character (its name is the database's, never the client's), or null if it no longer exists. */
+  getCharacter(id: string): Promise<{ id: string; name: string } | null>;
 }
 
 const asDraftDeps = (deps: PlanWriteDeps): DraftWriteDeps<EditPlan> => ({
@@ -56,7 +58,13 @@ async function prepare(deps: PlanWriteDeps, input: Ids, clientJson: unknown): Pr
   });
   if (!merged.ok) return merged;
   const words = await deps.loadWords(stored.source.transcriptAssetId);
-  return { ok: true, json: withFootageEstimate(merged.plan, words, houseStyle.edit), words };
+  let plan = merged.plan;
+  if (plan.character) {
+    const found = await deps.getCharacter(plan.character.id);
+    if (!found) return { ok: false, errors: ["The character you picked no longer exists. Pick another one or remove the AI shots of you."] };
+    plan = { ...plan, character: found };
+  }
+  return { ok: true, json: withFootageEstimate(plan, words, houseStyle.edit), words };
 }
 
 export async function savePlan(deps: PlanWriteDeps, input: Ids & { json: unknown }): Promise<Result> {
@@ -96,7 +104,9 @@ export async function replan(deps: PlanWriteDeps, input: Ids & { instruction: st
     return fail("The stored edit plan is invalid. Use “Edit as new version” or upload the video again.");
   }
   const fallback: FootageSettings = { language: stored.language, targetDurationSec: stored.targetDurationSec, ...(stored.ending.kind === "cta" ? { ctaKeyword: stored.ending.keyword } : {}) };
-  const settings = (await deps.ingestPayload(input.projectId))?.settings ?? fallback;
+  // The plan's character wins over the one picked at upload: the user may have changed or removed it in Settings since.
+  const { characterId: _uploadCharacter, ...picked } = (await deps.ingestPayload(input.projectId))?.settings ?? fallback;
+  const settings: FootageSettings = { ...picked, ...(stored.character ? { characterId: stored.character.id } : {}) };
   const payload = PlanFootageJobPayloadSchema.safeParse({ settings, source: stored.source, fromStoryboardId: input.storyboardId, ...(instruction ? { instruction } : {}) });
   if (!payload.success) return fail(`Couldn't queue the Re-plan: ${payload.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`);
   await deps.queueJob(input.projectId, "plan_footage", payload.data);

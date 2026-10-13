@@ -1,4 +1,4 @@
-import { footageDurationMs, LENGTH_TOLERANCE, parseEditPlan, type EditPlan, type EditStyle, type Word } from "@reel/core";
+import { footageDurationMs, LENGTH_TOLERANCE, parseEditPlan, type Cutaway, type EditPlan, type EditStyle, type Word } from "@reel/core";
 
 export type PlanAction =
   | { type: "toggleKeep"; beatId: string }
@@ -6,7 +6,9 @@ export type PlanAction =
   | { type: "setEmoji"; beatId: string; emoji: string }
   | { type: "setColdOpen"; beatId: string | null }
   | { type: "setHeadline"; small: string; big: string }
-  | { type: "setPatternBreak"; value: "zoom_hit" | "flash" | "none" }
+  | { type: "setPatternBreak"; value: "zoom_hit" | "flash" | "broll" | "none" }
+  | { type: "setCutaway"; beatId: string; cutaway: Cutaway | null }
+  | { type: "setCharacter"; character: { id: string; name: string } | null }
   | { type: "setReason"; reason: string }
   | { type: "setEnding"; ending: EditPlan["ending"] }
   | { type: "setMusic"; music: EditPlan["music"] }
@@ -37,6 +39,10 @@ export function editPlan(plan: EditPlan, a: PlanAction): EditPlan {
       return { ...plan, hook: { ...plan.hook, headline: { small: a.small, big: a.big } } };
     case "setPatternBreak":
       return { ...plan, hook: { ...plan.hook, patternBreak: a.value } };
+    case "setCutaway":
+      return withBeat(plan, a.beatId, (b) => (a.cutaway ? { ...b, cutaway: a.cutaway } : without(b, "cutaway")));
+    case "setCharacter":
+      return a.character ? { ...plan, character: a.character } : without(plan, "character");
     case "setReason":
       return { ...plan, hook: { ...plan.hook, reason: a.reason } };
     case "setEnding":
@@ -48,6 +54,13 @@ export function editPlan(plan: EditPlan, a: PlanAction): EditPlan {
   }
 }
 
+const trimCutaway = (c: Cutaway): Cutaway => {
+  const s = c.source;
+  if (s.kind === "ai_broll" || s.kind === "ai_self") return { ...c, source: { ...s, prompt: s.prompt.trim() } };
+  if (s.kind === "diagram") return { ...c, source: { ...s, items: s.items.map((t) => t.trim()).filter(Boolean) } };
+  return c;
+};
+
 /** Trims text and turns an empty headline into "no headline" (the schema requires a present headline's big line). */
 export function normalizePlanForSave(plan: EditPlan): EditPlan {
   const h = plan.hook.headline;
@@ -55,7 +68,10 @@ export function normalizePlanForSave(plan: EditPlan): EditPlan {
   return {
     ...plan,
     hook: { ...hook, reason: plan.hook.reason.trim() },
-    beats: plan.beats.map((b) => (b.emoji !== undefined && !b.emoji.trim() ? without(b, "emoji") : b)),
+    beats: plan.beats.map((b) => {
+      const e = b.emoji !== undefined && !b.emoji.trim() ? without(b, "emoji") : b;
+      return e.cutaway ? { ...e, cutaway: trimCutaway(e.cutaway) } : e;
+    }),
   };
 }
 

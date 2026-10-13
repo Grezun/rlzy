@@ -121,12 +121,14 @@ async function FootageReview({ supabase, projectId, storyboard, plan, canReplan,
   canReplan: boolean;
   canRetry: boolean;
 }) {
-  const [words, tracks] = await Promise.all([
+  const [words, tracks, chars] = await Promise.all([
     loadTranscript(supabase, plan.source.transcriptAssetId).then((t) => t.words, (err: Error) => ({ error: err.message })),
     supabase.from("team_music").select("id, title, mood").order("title"),
+    supabase.from("soul_characters").select("id, name").order("name"),
   ]);
   if ("error" in words) return <p className="error">{words.error}</p>;
   if (tracks.error) return <p className="error">Couldn't load the music library: {tracks.error.message}</p>;
+  if (chars.error) return <p className="error">Couldn't load the characters: {chars.error.message}</p>;
   const library: LibraryTrack[] = tracks.data;
   return (
     <FootagePlanEditor
@@ -136,6 +138,7 @@ async function FootageReview({ supabase, projectId, storyboard, plan, canReplan,
       initial={plan}
       words={words}
       library={library}
+      characters={chars.data}
       editable={storyboard.status === "draft"}
       canReplan={canReplan}
       canRetry={canRetry}
