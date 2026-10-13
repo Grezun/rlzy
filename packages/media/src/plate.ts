@@ -1,10 +1,20 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { probe } from "./probe";
-import { runFfmpeg } from "./run";
+import { runFfmpeg, runFfprobe } from "./run";
 
 /** The backdrop look (EditStyle["background"], kept structural so @reel/media doesn't depend on @reel/core). */
 export type BackdropLook = { zoom: number; driftPct: number; driftPeriodSec: number; driftPeriodYSec: number; blurSigma: number; dim: number; saturation: number; featherPx: number };
+
+/** The video stream's exact frame rate (e.g. "30000/1001") and frame count. */
+export async function streamTiming(file: string): Promise<{ rate: string; frames: number }> {
+  const { stdout } = await runFfprobe(["-count_frames", "-select_streams", "v:0", "-show_entries", "stream=avg_frame_rate,r_frame_rate,nb_read_frames", "-of", "json", file]);
+  const s = (JSON.parse(stdout) as { streams?: { avg_frame_rate?: string; r_frame_rate?: string; nb_read_frames?: string }[] }).streams?.[0];
+  const rate = s?.avg_frame_rate && s.avg_frame_rate !== "0/0" ? s.avg_frame_rate : s?.r_frame_rate;
+  const frames = Number(s?.nb_read_frames);
+  if (!rate || !Number.isFinite(frames) || frames < 1) throw new Error(`cannot read the frame rate and count of ${file}`);
+  return { rate, frames };
+}
 
 const even = (v: number) => Math.round(v / 2) * 2;
 
@@ -25,7 +35,7 @@ export async function prepareBackdrop(image: string, out: string, size: { width:
  * prepared backdrops. Each backdrop shows from its fromMs (source time) and sways slowly (sine drift on x and y, different
  * periods), so the scene is never a frozen photo behind a moving speaker.
  *
- * The plate has the same size, frame rate and length as the working copy and no audio. Everything downstream (zooms,
+ * The plate has the same size, frame rate and frame count as the working copy (a longer matte is cut off, a shorter one holds its last frame) and no audio. Everything downstream (zooms,
  * punch-ins, split crops) uses it in place of the working copy.
  */
 export async function compositeSpeakerPlate(opts: { video: string; matte: string; backgrounds: { image: string; fromMs: number }[]; out: string; look: BackdropLook; tmpDir: string }): Promise<void> {
@@ -33,7 +43,8 @@ export async function compositeSpeakerPlate(opts: { video: string; matte: string
   if (!backgrounds.length) throw new RangeError("compositeSpeakerPlate needs at least one background");
   const info = await probe(video);
   if (!info.video) throw new Error("the speaker clip has no picture");
-  const { width: w, height: h, fps } = info.video;
+  const { width: w, height: h } = info.video;
+  const { rate, frames } = await streamTiming(video);
   await mkdir(opts.tmpDir, { recursive: true });
   const prepared: string[] = [];
   for (const [i, b] of backgrounds.entries()) {
@@ -57,15 +68,15 @@ export async function compositeSpeakerPlate(opts: { video: string; matte: string
   });
   const feather = look.featherPx > 0 ? `,gblur=sigma=${(look.featherPx / 2).toFixed(2)}` : "";
   graph.push(
-    `[1:v]format=gray${feather}[mask]`,
+    `[1:v]scale=${w}:${h},format=gray${feather}[mask]`,
     "[0:v]format=yuva420p[fg]",
     "[fg][mask]alphamerge[cut]",
     `[${bg}][cut]overlay=shortest=1:format=auto,format=yuv420p[v]`,
   );
   await runFfmpeg([
     "-i", video, "-i", matte,
-    ...prepared.flatMap((f) => ["-loop", "1", "-framerate", String(fps), "-i", f]),
-    "-filter_complex", graph.join(";"), "-map", "[v]", "-an",
-    "-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p", "-r", String(fps), "-movflags", "+faststart", out,
+    ...prepared.flatMap((f) => ["-loop", "1", "-framerate", rate, "-i", f]),
+    "-filter_complex", graph.join(";"), "-map", "[v]", "-an", "-frames:v", String(frames),
+    "-c:v", "libx264", "-preset", "medium", "-crf", "16", "-pix_fmt", "yuv420p", "-r", rate, "-movflags", "+faststart", out,
   ]);
 }
