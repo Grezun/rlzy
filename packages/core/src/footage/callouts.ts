@@ -72,6 +72,37 @@ export function planCallouts(plan: Pick<EditPlan, "beats" | "hook" | "ending" | 
 }
 
 /**
+ * Safety net for Claude's draft (Claude often puts a callout on a beat that also carries a cutaway): a callout whose beat
+ * has no free stretch moves to the next kept beat in reel order, when that beat has no cutaway and no callout of its own
+ * and the callout places there. Otherwise it stays, and placeCallouts drops it with its warning. Run once on the new
+ * plan, so the review page and generation (both planCallouts on the stored plan) agree.
+ */
+export function moveCoveredCallouts<P extends Pick<EditPlan, "beats" | "hook" | "ending" | "source">>(plan: P, words: Word[], style: EditStyle): { plan: P; warnings: string[] } {
+  if (!plan.beats.some((b) => b.keep && b.callout)) return { plan, warnings: [] };
+  const shots = planShots(plan, words, style);
+  const cutaways = placeCutaways(plan, shots, style).placed;
+  const order = [...beatSpans(shots).keys()];
+  const places = (beats: P["beats"], id: string) => placeCallouts({ ...plan, beats }, shots, cutaways, style).placed.some((c) => c.beatId === id);
+  let beats = plan.beats;
+  const warnings: string[] = [];
+  order.forEach((id, i) => {
+    const callout = beats.find((b) => b.id === id)?.callout;
+    const next = beats.find((b) => b.id === order[i + 1]);
+    if (!callout || !next || next.cutaway || next.callout || places(beats, id)) return;
+    const moved = beats.map((b) => {
+      if (b.id === next.id) return { ...b, callout };
+      if (b.id !== id) return b;
+      const { callout: _drop, ...rest } = b;
+      return rest;
+    });
+    if (!places(moved, next.id)) return;
+    beats = moved;
+    warnings.push(`The callout in ${id} ("${callout.text}") moved to ${next.id}: the hook headline, a cutaway or the CTA card covers ${id}.`);
+  });
+  return { plan: beats === plan.beats ? plan : { ...plan, beats }, warnings };
+}
+
+/**
  * Where the badge goes. Never over the face, and never near the captions, which sit below the face:
  * 1. Centred just above the face when its top edge stays below the top safe area.
  * 2. Otherwise in the top band, on the side with room beside the face.

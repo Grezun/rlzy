@@ -3,7 +3,7 @@ import { ceilToCent, estimateFootageCost, estimateReelSeconds } from "../cost";
 import { TimelineSchema } from "../schema/timeline";
 import { parseEditPlan, type EditPlan } from "../schema/edit-plan";
 import { EXTRA_IMG, faceTrackFixture, fixtureExtras, footageTranscript, lowFaceTrackFixture, testEditStyle, validEditPlan } from "../testing/fixtures";
-import { planCallouts } from "./callouts";
+import { moveCoveredCallouts, planCallouts } from "./callouts";
 import { cutawayBudget, planCutaways } from "./cutaways";
 import { compileFootage, EmptyEditError, footageDurationMs, withFootageEstimate, type FootageAssets } from "./compile";
 import { framesToMs, planShots } from "./shots";
@@ -363,6 +363,40 @@ describe("callouts", () => {
     const { timeline, notes } = compileFootage(withCallouts({ b2: "3x" }), transcript, big, assets, style);
     expect(timeline.callouts).toBeUndefined();
     expect(notes).toEqual(["The callout in b2 was left out: there was no room for it without covering your face."]);
+  });
+
+  describe("moveCoveredCallouts (safety net for Claude's draft)", () => {
+    const cover = { source: { kind: "ai_broll", prompt: "laptop", media: "image" }, layout: "full", atMs: 0, durationMs: 3000 };
+    const withBeats = (edit: Record<string, Partial<EditPlan["beats"][number]>>) =>
+      plan({ beats: validEditPlan().beats.map((b) => ({ ...b, ...edit[b.id] })) as EditPlan["beats"] });
+
+    it("moves a callout off a beat a cutaway (and the headline) covers to the next free kept beat, and it then places", () => {
+      const p = withBeats({ b1: { cutaway: cover as never, callout: { text: "CRM" } } }); // b1 0–89: headline 0–60, cutaway 0–89
+      expect(planCallouts(p, transcript.words, style).placed).toEqual([]);
+      const r = moveCoveredCallouts(p, transcript.words, style);
+      expect(r.plan.beats.map((b) => b.callout?.text)).toEqual([undefined, "CRM", undefined]);
+      expect(r.warnings).toEqual(['The callout in b1 ("CRM") moved to b2: the hook headline, a cutaway or the CTA card covers b1.']);
+      expect(planCallouts(r.plan, transcript.words, style)).toEqual({ placed: [{ beatId: "b2", text: "CRM", fromFrame: 95, durationInFrames: 48 }], warnings: [] }); // after the cutaway's exit
+    });
+
+    it("leaves it (placeCallouts drops it) when the next beat has a cutaway, its own callout, no room, or there is none", () => {
+      const cases = [
+        withBeats({ b1: { cutaway: cover as never, callout: { text: "CRM" } }, b2: { cutaway: { ...cover, atMs: 1000 } as never } }),
+        withBeats({ b1: { cutaway: cover as never, callout: { text: "CRM" } }, b2: { callout: { text: "3x" } } }),
+        withBeats({ b2: { cutaway: cover as never, callout: { text: "CRM" } } }), // b3 runs under the CTA card
+        withBeats({ b3: { callout: { text: "CRM" } } }), // the last beat
+      ];
+      for (const p of cases) {
+        const r = moveCoveredCallouts(p, transcript.words, style);
+        expect(r.plan).toEqual(p);
+        expect(r.warnings).toEqual([]);
+      }
+    });
+
+    it("leaves a callout that already places where it is", () => {
+      const p = withBeats({ b2: { callout: { text: "3x" } } });
+      expect(moveCoveredCallouts(p, transcript.words, style)).toEqual({ plan: p, warnings: [] });
+    });
   });
 
   it("turns the progress bar on for footage reels", () => {

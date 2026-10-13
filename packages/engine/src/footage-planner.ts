@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import {
-  CALLOUT_MAX_CHARS, CalloutSchema, EditPlanDraftSchema, LENGTH_TOLERANCE, applyCalloutBudget, applyCutawayBudget, calloutBudget, cutawayBudget, parseEditPlan, plural, splitBeats, withFootageEstimate,
+  CALLOUT_MAX_CHARS, CalloutSchema, EditPlanDraftSchema, LENGTH_TOLERANCE, applyCalloutBudget, applyCutawayBudget, calloutBudget, cutawayBudget, moveCoveredCallouts, parseEditPlan, plural, splitBeats, withFootageEstimate,
   type BeatSpan, type Cutaway, type DraftCutaway, type EditPlan, type EditPlanDraft, type EditStyle, type FootageExtra, type FootageSettings, type FootageSource, type MusicMood, type Transcript,
 } from "@reel/core";
 
@@ -59,12 +59,12 @@ export function footageSystemPrompt(): string {
     "  - reason: one sentence explaining the hook, shown to the user.",
     "- emphasisWordIdx: in about one beat in three, the index of its single most important word (shown in red). -1 for none.",
     "- emoji: in about one beat in four: 👆 or 👇 when the speaker points, or one emoji that fits the line (it pops in when the line ends). Empty otherwise.",
-    `- callout: in a few beats, a short sticker that springs in above the speaker: a number from the talk ("1/5", "3x", "90%") or 1–3 key words (at most ${CALLOUT_MAX_CHARS} characters), in the reel's language, where that number or phrase is said. Stay inside the callout budget; not on the first beat (the headline covers it) or the last (the CTA card covers it). Empty otherwise.`,
+    `- callout: in a few beats, a short sticker that springs in above the speaker: a number from the talk ("1/5", "3x", "90%") or 1–3 key words (at most ${CALLOUT_MAX_CHARS} characters), in the reel's language, where that number or phrase is said. Stay inside the callout budget. A callout shows only over the speaker, so put it only on a kept beat with no cutaway (a beat has a cutaway or a callout, never both), at least 1.5 s long, and not on the first beat (the headline covers it) or the last (the CTA card covers it). Empty otherwise.`,
     '- ending: "cta" when there is a comment keyword (the user gave one, or the speaker asks viewers to comment a word: put that word in keyword); "loop" when the last line can flow back into the first; otherwise "none".',
     '- music: a library track whose mood fits (kind "library", trackId); "ai" with a short English instrumental prompt (genre, mood, tempo) only when no library track fits; "none" for serious or emotional talks.',
     '- sfx: "subtle" by default, "lively" for energetic tips, "off" for serious topics.',
     "- dropReason: for every dropped beat, a short English reason (\"retake of b4\", \"false start\", \"tangent\").",
-    "- cutaway: at most one per beat. Use the cutaway budget: plan close to its maximum (about one cutaway every 3 seconds of the finished reel), spread evenly over the kept beats, and use the video clips it allows on the most visual moments. Show what the words talk about; 1–2 s is typical (durationMs 1000–3000), starting atMs after the beat starts, counted after pauses are cut; keep atMs + durationMs inside the beat.",
+    "- cutaway: at most one per beat, and none on a beat with a callout. Use the cutaway budget: plan close to its maximum (about one cutaway every 3 seconds of the finished reel), spread evenly over the kept beats, and use the video clips it allows on the most visual moments. Show what the words talk about; 1–2 s is typical (durationMs 1000–3000), starting atMs after the beat starts, counted after pauses are cut; keep atMs + durationMs inside the beat.",
     '  - "ai_broll": a concrete thing or action the beat names. prompt: one English sentence for a realistic photo (subject, setting, light); never text, screens with words, or logos. media "video" only when the motion matters, otherwise "image".',
     '  - "ai_self": the speaker doing what the beat describes (only when a character is available). prompt in English, calling them "the person".',
     '  - "upload": one of the user\'s uploads whose label fits the beat; uploadId is its x1…x6 id.',
@@ -199,7 +199,8 @@ export function buildEditPlan(draft: EditPlanDraft, req: FootagePlanRequest, bea
     ...(req.character ? { character: req.character } : {}),
     warnings: [...req.warnings, ...budgeted.warnings, ...calloutWarnings, ...withCallouts.warnings, ...(brollLost ? ["The B-roll opening had no cutaway left, so it became a zoom hit."] : [])],
   };
-  return withFootageEstimate(parseEditPlan(plan), req.transcript.words, style);
+  const moved = moveCoveredCallouts(parseEditPlan(plan), req.transcript.words, style);
+  return withFootageEstimate({ ...moved.plan, warnings: [...moved.plan.warnings, ...moved.warnings] }, req.transcript.words, style);
 }
 
 type Attempt = { ok: true; plan: EditPlan } | { ok: false; error: string; plan?: EditPlan };

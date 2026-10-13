@@ -181,6 +181,17 @@ describe("callouts from Claude's draft", () => {
     expect(plan.beats.map((b) => b.callout)).toEqual([{ text: "1/5" }, undefined, { text: "3x" }]);
     expect(plan.warnings).toEqual(['The callout in b2 ("this callout is far too long") was removed: a callout is a number or 1–3 words, at most 16 characters.']);
   });
+  it("moves a callout off a beat its cutaway covers to the next free kept beat, with a warning", () => {
+    const d = withCuts({ b1: { kind: "ai_broll", media: "image", prompt: "a CRM dashboard", atMs: 0, durationMs: 3000 } });
+    d.beats = d.beats.map((b) => (b.id === "b1" ? { ...b, callout: "CRM" } : b));
+    const plan = buildEditPlan(d, REQ, beats, style);
+    expect(plan.beats.map((b) => b.callout?.text)).toEqual([undefined, "CRM", undefined]);
+    expect(plan.warnings).toEqual(['The callout in b1 ("CRM") moved to b2: the hook headline, a cutaway or the CTA card covers b1.']);
+  });
+  it("tells Claude to put callouts only on kept speaker beats with no cutaway, long enough to show one", () => {
+    expect(footageSystemPrompt()).toContain("only on a kept beat with no cutaway (a beat has a cutaway or a callout, never both)");
+    expect(footageSystemPrompt()).toContain("at least 1.5 s long");
+  });
   it("tells Claude the callout budget and what a callout is", () => {
     expect(footageUserPrompt(REQ, beats)).toContain("Callout budget: at most 3 callouts.");
     expect(footageSystemPrompt()).toContain('a number from the talk ("1/5", "3x", "90%") or 1–3 key words');
