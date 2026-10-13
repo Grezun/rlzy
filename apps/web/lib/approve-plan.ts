@@ -27,6 +27,11 @@ const asDraftDeps = (deps: PlanWriteDeps): DraftWriteDeps<EditPlan> => ({
   queueGenerate: (projectId, storyboardId) => deps.queueJob(projectId, "generate_footage", { storyboardId }),
 });
 
+function stripCutaway<B extends { cutaway?: unknown }>(b: B): B {
+  const { cutaway: _drop, ...rest } = b;
+  return rest as B;
+}
+
 type Ids = { projectId: string; storyboardId: string };
 type Prepared = { ok: true; json: EditPlan; words: Word[] } | { ok: false; errors: string[] };
 
@@ -61,8 +66,17 @@ async function prepare(deps: PlanWriteDeps, input: Ids, clientJson: unknown): Pr
   let plan = merged.plan;
   if (plan.character) {
     const found = await deps.getCharacter(plan.character.id);
-    if (!found) return { ok: false, errors: ["The character you picked no longer exists. Pick another one or remove the AI shots of you."] };
-    plan = { ...plan, character: found };
+    if (found) plan = { ...plan, character: found };
+    else {
+      if (plan.beats.some((b) => b.keep && b.cutaway?.source.kind === "ai_self")) {
+        // The stored name (the client's could be anything); the client's only if the stored plan had another character.
+        const name = stored.character?.id === plan.character.id ? stored.character.name : plan.character.name;
+        return { ok: false, errors: [`The character "${name}" was removed. Pick another one, or pick None and remove the AI shots of you.`] };
+      }
+      // Nothing kept needs it: drop it silently, with the AI shots of you on dropped beats (the schema needs a character for those).
+      const { character: _removed, ...rest } = plan;
+      plan = { ...rest, beats: plan.beats.map((b) => (b.cutaway?.source.kind === "ai_self" ? stripCutaway(b) : b)) };
+    }
   }
   return { ok: true, json: withFootageEstimate(plan, words, houseStyle.edit), words };
 }

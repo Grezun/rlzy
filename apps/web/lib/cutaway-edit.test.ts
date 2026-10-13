@@ -2,7 +2,7 @@ import { parseEditPlan } from "@reel/core";
 import { houseStyle } from "@reel/video/house-style";
 import { describe, expect, it } from "vitest";
 import { EXTRA_IMG, fixtureExtras, footageTranscript, validEditPlan } from "../../../packages/core/src/testing/fixtures";
-import { cutawayChoice, cutawayPriceLabel, defaultCutaway, placementWarnings } from "./cutaway-edit";
+import { cutawayChoice, cutawayLengthMs, cutawayPriceLabel, defaultCutaway, placementWarnings } from "./cutaway-edit";
 
 const plan = () => parseEditPlan({ ...validEditPlan(), source: { ...validEditPlan().source, extras: fixtureExtras() } });
 
@@ -26,5 +26,18 @@ describe("cutaway editing helpers", () => {
   it("lists the placement warnings for the review page", () => {
     const p = parseEditPlan({ ...plan(), beats: plan().beats.map((b) => (b.id === "b3" ? { ...b, cutaway: { source: { kind: "ai_broll", prompt: "x", media: "image" }, layout: "full", atMs: 0, durationMs: 1000 } } : b)) });
     expect(placementWarnings(p, footageTranscript().words, houseStyle.edit)).toEqual(["The cutaway in b3 was dropped: it ran under the CTA card."]);
+  });
+});
+
+describe("cutawayLengthMs (the Length (s) field)", () => {
+  it("clamps to 1–3 s and keeps the previous length for an empty or unreadable field", () => {
+    expect(cutawayLengthMs("2.5", 1500)).toBe(2500);
+    expect(cutawayLengthMs("10", 1500)).toBe(3000);
+    expect(cutawayLengthMs("0.2", 1500)).toBe(1000);
+    expect(cutawayLengthMs("-4", 1500)).toBe(1000);
+    expect(cutawayLengthMs("", 1500)).toBe(1500);
+    expect(cutawayLengthMs("  ", 2000)).toBe(2000);
+    expect(cutawayLengthMs("abc", 2000)).toBe(2000);
+    expect(cutawayLengthMs("1.2345", 1500)).toBe(1235);
   });
 });

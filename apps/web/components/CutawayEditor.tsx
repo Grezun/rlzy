@@ -1,6 +1,6 @@
 "use client";
 import type { Cutaway, EditPlan } from "@reel/core";
-import { CUTAWAY_CHOICES, cutawayChoice, cutawayPriceLabel, defaultCutaway, type CutawayChoice } from "@/lib/cutaway-edit";
+import { CUTAWAY_CHOICES, CUTAWAY_MAX_MS, CUTAWAY_MIN_MS, cutawayChoice, cutawayLengthMs, cutawayPriceLabel, defaultCutaway, type CutawayChoice } from "@/lib/cutaway-edit";
 
 const TEMPLATES = [["list", "List (2–4)"], ["compare", "Compare (2)"], ["flow", "Steps (2–3)"]] as const;
 const MAX_ITEMS = { list: 4, compare: 2, flow: 3 } as const;
@@ -31,7 +31,7 @@ export function CutawayEditor({ plan, cutaway, onChange }: { plan: EditPlan; cut
               <input type="number" min={0} step={0.1} value={cutaway.atMs / 1000} onChange={(e) => set({ atMs: Math.max(0, Math.round(Number(e.target.value) * 1000)) })} style={{ width: 80 }} />
             </label>
             <label>Length (s)
-              <input type="number" min={1} max={3} step={0.1} value={cutaway.durationMs / 1000} onChange={(e) => set({ durationMs: Math.round(Number(e.target.value) * 1000) })} style={{ width: 80 }} />
+              <input type="number" min={CUTAWAY_MIN_MS / 1000} max={CUTAWAY_MAX_MS / 1000} step={0.1} value={cutaway.durationMs / 1000} onChange={(e) => set({ durationMs: cutawayLengthMs(e.target.value, cutaway.durationMs) })} style={{ width: 80 }} />
             </label>
             <span className="muted">{cutawayPriceLabel(cutaway)}</span>
           </>

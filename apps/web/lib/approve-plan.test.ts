@@ -58,8 +58,30 @@ describe("savePlan / approvePlan", () => {
     expect(await savePlan(d, { projectId: "p1", storyboardId: SB, json: client(CHAR) })).toEqual({ ok: true });
     expect(d.written[0].character).toEqual({ id: CHAR, name: "Alex (from DB)" });
     expect(d.written[0].estimate.credits).toBe(0.04);
-    expect(await savePlan(d, { projectId: "p1", storyboardId: SB, json: client("11111111-2222-4333-8444-555555555555") }))
-      .toEqual({ ok: false, errors: ["The character you picked no longer exists. Pick another one or remove the AI shots of you."] });
+  });
+  it("refuses a removed character while a kept beat has an AI shot of you, naming it by its stored name", async () => {
+    const GONE = "11111111-2222-4333-8444-555555555555";
+    const shot = { source: { kind: "ai_self", prompt: "the person on a plane", media: "image" }, layout: "full", atMs: 0, durationMs: 1000 };
+    const withChar = { ...stored(), character: { id: GONE, name: "Dana" }, beats: stored().beats.map((b) => (b.id === "b2" ? { ...b, cutaway: shot } : b)) };
+    const d = deps({ getStoryboard: async () => ({ projectId: "p1", version: 1, status: "draft", json: withChar }) });
+    const client = { ...withChar, character: { id: GONE, name: "typed by the client" } };
+    const refusal = { ok: false, errors: ['The character "Dana" was removed. Pick another one, or pick None and remove the AI shots of you.'] };
+    expect(await savePlan(d, { projectId: "p1", storyboardId: SB, json: client })).toEqual(refusal);
+    expect(await approvePlan(d, { projectId: "p1", storyboardId: SB, json: client })).toEqual(refusal);
+    expect(d.written).toEqual([]);
+    expect(d.queued).toEqual([]);
+  });
+  it("drops a removed character silently when no kept beat has an AI shot of you (Save and Approve both work)", async () => {
+    const GONE = "11111111-2222-4333-8444-555555555555";
+    const shot = { source: { kind: "ai_self", prompt: "the person on a plane", media: "image" }, layout: "full", atMs: 0, durationMs: 1000 };
+    // b2 keeps no AI shot of you; an untouched dropped beat may still carry one, which goes with the character.
+    const json = { ...stored(), character: { id: GONE, name: "Dana" }, beats: stored().beats.map((b, i) => (i === 0 ? { ...b, keep: false, cutaway: shot } : b)) };
+    const d = deps({ getStoryboard: async () => ({ projectId: "p1", version: 1, status: "draft", json }) });
+    expect(await savePlan(d, { projectId: "p1", storyboardId: SB, json })).toEqual({ ok: true });
+    expect(d.written[0].character).toBeUndefined();
+    expect(d.written[0].beats.some((b) => b.cutaway?.source.kind === "ai_self")).toBe(false);
+    expect(parseEditPlan(d.written[0])).toBeTruthy();
+    expect(await approvePlan(deps({ getStoryboard: async () => ({ projectId: "p1", version: 1, status: "draft", json }) }), { projectId: "p1", storyboardId: SB, json })).toEqual({ ok: true });
   });
   it("refuses while a job is running", async () => {
     const r = await approvePlan(deps({ activeJobCount: async () => 1 }), { projectId: "p1", storyboardId: SB, json: stored() });

@@ -24,6 +24,16 @@ export function defaultCutaway(choice: CutawayChoice, plan: EditPlan, previous?:
   return { source: { kind, prompt, media }, ...timing };
 }
 
+export const CUTAWAY_MIN_MS = 1000;
+export const CUTAWAY_MAX_MS = 3000;
+
+/** The Length (s) field in ms: clamped to 1–3 s (the schema's range); an empty or unreadable field keeps the previous length. */
+export function cutawayLengthMs(input: string, previousMs: number): number {
+  const sec = input.trim() === "" ? NaN : Number(input);
+  if (!Number.isFinite(sec)) return previousMs;
+  return Math.min(CUTAWAY_MAX_MS, Math.max(CUTAWAY_MIN_MS, Math.round(sec * 1000)));
+}
+
 export const cutawayPriceLabel = (c: Cutaway) => {
   const usd = cutawayCost(c.source, c.durationMs);
   return usd === 0 ? "free" : `$${usd.toFixed(2)}`;
