@@ -42,6 +42,8 @@ export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps
   await mkdir(deps.tmpDir, { recursive: true });
   const tmp = (name: string) => join(deps.tmpDir, name);
   const inputs = await loadFootageInputs(store, plan.source, deps.original && { original: deps.original, tmpDir: deps.tmpDir, log });
+  // Draft compile for voice segments and reel length only; its notes are dropped on purpose (it has no cutaways yet, so
+  // it would report callouts wrongly). The real notes come from the compile with the made cutaways under "visuals".
   const draft = compileFootage(plan, inputs.transcript, inputs.faceTrack, { videoSrc: "draft", sfx: {} }, deps.style);
   const notes: string[] = [];
   const budget = makeBudget(plan.estimate.credits);
@@ -108,6 +110,7 @@ export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps
   const cut = await generateCutaways(placed, plan, { image: deps.image, video: deps.video, uploader: deps.uploader, store, tmpDir: join(deps.tmpDir, "cutaways"), log, character: deps.character, budget });
   notes.push(...cut.notes);
   // Callouts with no room beside the face: needs the face track and the cutaways that were actually made.
+  // src "draft" is a placeholder: only which cutaways exist (and their kind) matters for these notes.
   const made = Object.fromEntries(Object.entries(cut.assets).map(([id, c]) => [id, { kind: c.kind, src: "draft" }]));
   notes.push(...compileFootage(plan, inputs.transcript, inputs.faceTrack, { videoSrc: "draft", sfx: {}, cutaways: made }, deps.style).notes);
   emit({ type: "step", step: "visuals", status: "done" });

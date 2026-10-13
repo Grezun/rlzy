@@ -72,7 +72,8 @@ export const LOOK_FRAMES = [
  * - glass pills (red spoken word, red-capsule emphasis)
  * - a callout 48–75
  * - a full cutaway 75–113 (it leaves 7 frames before the split, so its exit transition is real): a drifting still with
- *   whip transitions when `media` is given, else a list card zooming in and out
+ *   whip transitions when `media` is given (shown whole over its blurred fill, so a landscape still shows the parallax),
+ *   else a list card zooming in and out
  * - a split flow card 120–150 sliding in, with the pill on the seam
  * - the CTA 150–180
  * - the progress bar
@@ -90,7 +91,7 @@ export function sampleLookTimeline(lang: "he" | "en", media?: { videoSrc: string
     ? [{ sceneId: "s1", kind: "speaker", src: media.videoSrc, fromFrame: 0, durationInFrames: 180, motion: "none", transitionIn: "cut", source: { inMs: 0, outMs: 6000 }, crop: { cx: 0.5, cy: 0.4, scaleFrom: 1, scaleTo: 1.08 } }]
     : [{ sceneId: "g1", kind: "graphic", fromFrame: 0, durationInFrames: 180, motion: "zoom_in", transitionIn: "cut" }];
   const full: TimelineCutaway = media
-    ? { id: "b2", fromFrame: 75, durationInFrames: 38, layout: "full", transition: { in: "whip", out: "whip" }, media: { kind: "image", src: media.imageSrc, fit: "cover", kenBurns: 1.12, drift: { x: 0.03, y: 0 } } }
+    ? { id: "b2", fromFrame: 75, durationInFrames: 38, layout: "full", transition: { in: "whip", out: "whip" }, media: { kind: "image", src: media.imageSrc, fit: "contain_blur", kenBurns: 1.12, drift: { x: 0.03, y: 0 } } }
     : { id: "b2", fromFrame: 75, durationInFrames: 38, layout: "full", transition: { in: "zoom", out: "zoom" }, media: { kind: "diagram", template: "list", items: t.list } };
   return {
     fps: 30, width: 1080, height: 1920, durationInFrames: 180, language: lang, direction: he ? "rtl" : "ltr",

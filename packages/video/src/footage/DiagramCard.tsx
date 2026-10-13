@@ -62,8 +62,9 @@ export const DiagramCard: React.FC<{ diagram: Diagram; direction: Timeline["dire
       </div>
     );
   } else {
+    // Connector rows flex; the last row (no connector) only takes its own height, so step N sits at the card's bottom.
     body = diagram.items.map((t, i) => (
-      <div key={i} style={{ flex: 1, display: "flex", alignItems: "stretch", gap: 32 * k }}>
+      <div key={i} style={{ flex: i < diagram.items.length - 1 ? 1 : "0 0 auto", display: "flex", alignItems: "stretch", gap: 32 * k }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: icon }}>
           <div style={enter(i)}>{circle(<span style={{ ...badgeText, fontSize: icon * 0.45 }}>{i + 1}</span>)}</div>
           {i < diagram.items.length - 1 ? (
