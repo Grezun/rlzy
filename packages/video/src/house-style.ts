@@ -31,6 +31,8 @@ export const houseStyle = {
     // One visible break every ≈ 10 s (8–12 s): the first reel had a single break at 0 s and read as static.
     breaks: { everyMs: 10_000, minMs: 8000, maxMs: 12_000, minShotFrames: 12, kinds: ["zoom_blur", "zoom_hit", "zoom_blur", "flash"], hitFactor: 1.2, zoomBlurFrames: 6 },
     snapFrames: 4,
+    // spec §5.5: ≥ 40 % shows the speaker; §5.7: B-roll break 1 s; §6: stills +6 % Ken Burns
+    cutaways: { minMs: 1000, minSpeakerShare: 0.4, brollBreakMs: 1000, kenBurns: 1.06, contentFitRatio: 1.3 },
   } satisfies EditStyle,
   captions: {
     topPct: 45, fontSize: 66, textColor: "#000000", pillColor: "#FFFFFF", emphasisColor: "#E5262A", radius: 24, padX: 30, padY: 10, maxWidthPct: 86,

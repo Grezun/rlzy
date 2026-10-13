@@ -119,6 +119,13 @@ describe("compileFootage", () => {
 });
 
 describe("estimate", () => {
+  it("prices only the cutaways that will be placed", () => {
+    const cut = (media: "image" | "video", atMs = 0) => ({ source: { kind: "ai_broll" as const, prompt: "laptop", media }, layout: "full" as const, atMs, durationMs: 2000 });
+    const p = plan({ beats: validEditPlan().beats.map((b) => (b.id === "b1" ? { ...b, cutaway: cut("video") } : b.id === "b2" ? { ...b, cutaway: cut("image") } : { ...b, cutaway: cut("video") })) });
+    // b3's clip falls under the CTA card and is dropped, so it costs nothing.
+    expect(withFootageEstimate(p, transcript.words, style).estimate.credits).toBe(0.4);
+  });
+
   it("matches the compiled length and prices AI music per second", () => {
     expect(footageDurationMs(plan(), transcript.words, style)).toBeCloseTo(compile().durationMs, 6);
     expect(withFootageEstimate(plan(), transcript.words, style).estimate).toEqual({ durationSec: 7.3, credits: 0 });

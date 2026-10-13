@@ -6,6 +6,7 @@ import { TimelineSchema, type SfxName, type Timeline, type TimelineClip, type Wo
 import { placeCaptionPages, screenChinY, type FaceSpan } from "./caption-place";
 import { addSnaps, applyBreaks, pickBreaks } from "./breaks";
 import { pageWords, type ReelWord } from "./captions";
+import { placeCutaways } from "./cutaways";
 import { faceAt } from "./face-track";
 import { centerFor, ctaStartFrame, framesToMs, maxScaleFor, msToFrames, planShots, shotCrop } from "./shots";
 import type { EditStyle } from "./style";
@@ -38,7 +39,8 @@ export function withFootageEstimate(plan: EditPlan, words: Word[], style: EditSt
   const durationMs = footageDurationMs(plan, words, style);
   const durationSec = Math.round(durationMs / 100) / 10;
   // Rounded UP to the cent: generation skips music that costs more than the approved estimate.
-  const credits = ceilToCent(estimateFootageCost(plan, estimateReelSeconds(durationMs), table));
+  const { placed } = placeCutaways(plan, planShots(plan, words, style), style);
+  const credits = ceilToCent(estimateFootageCost(plan, estimateReelSeconds(durationMs), table, placed));
   return { ...plan, estimate: { durationSec, credits } };
 }
 

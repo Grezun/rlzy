@@ -44,5 +44,13 @@ export const EditStyleSchema = z.object({
   }),
   /** Punch-in cuts (to a larger zoom step) enter with a short scale snap. */
   snapFrames: z.number().int().positive(),
+  /** Spec §5.4–5.5. contentFitRatio: an upload whose aspect differs from its slot by more than this is shown whole on a blurred fill. */
+  cutaways: z.object({
+    minMs: z.number().positive(),
+    minSpeakerShare: z.number().min(0).max(1),
+    brollBreakMs: z.number().positive(),
+    kenBurns: z.number().min(1).max(1.5),
+    contentFitRatio: z.number().min(1),
+  }),
 });
 export type EditStyle = z.infer<typeof EditStyleSchema>;

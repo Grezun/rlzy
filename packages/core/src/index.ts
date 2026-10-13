@@ -22,3 +22,4 @@ export * from "./footage/captions";
 export * from "./footage/compile";
 export * from "./footage/caption-place";
 export * from "./footage/breaks";
+export * from "./footage/cutaways";

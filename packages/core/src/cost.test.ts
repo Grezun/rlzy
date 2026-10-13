@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertWithinCap, ceilToCent, DEFAULT_COST_TABLE, estimateCost, estimateFootageCost, estimateReelSeconds, estimateSceneSeconds, MUSIC_MIN_MS, musicBillSeconds, videoBillSeconds } from "./cost";
+import { assertWithinCap, ceilToCent, DEFAULT_COST_TABLE, cutawayCost, estimateCost, estimateFootageCost, estimateReelSeconds, estimateSceneSeconds, MUSIC_MIN_MS, musicBillSeconds, videoBillSeconds } from "./cost";
 import { SpendCapError, UnknownCostModelError } from "./errors";
 import { parseStoryboard } from "./schema/storyboard";
 import { validStoryboard } from "./testing/fixtures";
@@ -84,5 +84,14 @@ describe("footage cost", () => {
     expect(musicBillSeconds(estimateReelSeconds(1200))).toBe(3);
     expect(musicBillSeconds(estimateReelSeconds(3001))).toBe(4);
     expect(estimateFootageCost({ music: { kind: "ai", prompt: "x" } }, estimateReelSeconds(1200))).toBeCloseTo(0.03, 9);
+  });
+});
+
+describe("cutaway prices", () => {
+  it("AI still $0.04, AI clip = still + 4 billed seconds × $0.08, uploads and diagrams free", () => {
+    expect(cutawayCost({ kind: "ai_broll", prompt: "x", media: "image" }, 2000)).toBeCloseTo(0.04, 9);
+    expect(cutawayCost({ kind: "ai_self", prompt: "x", media: "video" }, 2000)).toBeCloseTo(0.36, 9);
+    expect(cutawayCost({ kind: "upload", assetId: "d".repeat(64) }, 2000)).toBe(0);
+    expect(cutawayCost({ kind: "diagram", template: "list", items: ["a", "b"] }, 2000)).toBe(0);
   });
 });
