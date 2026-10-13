@@ -53,6 +53,10 @@ The fake worker plans with a fake voice. A storyboard planned by the fake worker
 
 The fake worker also edits uploaded videos for free: fake transcript text, fake music, placeholder sound effects (short tones), and centred crops when face-helper isn't built. Real workers refuse edit plans made from a fake transcript or face track, so upload the video again with the real worker running for real reels.
 
+### Preview the footage look (free)
+
+`npm run preview:look` renders the look sample: headline, glass pills, a callout, a whip into a drifting still, a split flow card, the CTA and the progress bar. It uses a test video and a test still, in Hebrew and English, with no API keys and no paid calls. Open `work/stills/look/he-sheet.png` and `en-sheet.png` (8 frames each), or the single frames `he-01.png` … `he-08.png`.
+
 ## Database changes
 
 Add a file under `supabase/migrations/`, apply it, regenerate `packages/db/src/database.types.ts`.

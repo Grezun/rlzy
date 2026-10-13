@@ -2,7 +2,7 @@ import { mkdir, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { renderReelStill } from "./render";
-import { sampleCutawayTimeline, sampleFootageTimeline } from "./sample-footage";
+import { LOOK_FRAMES, sampleCutawayTimeline, sampleFootageTimeline, sampleLookTimeline } from "./sample-footage";
 
 const OUT = resolve("work/stills");
 
@@ -26,6 +26,14 @@ describe("footage components (stills)", () => {
     for (const lang of ["he", "en"] as const) {
       const file = join(OUT, `footage-${name}-${lang}.png`);
       await renderReelStill(sampleCutawayTimeline(lang), file, frame);
+      expect((await stat(file)).size).toBeGreaterThan(20_000);
+    }
+  }, 300_000);
+  it.each(LOOK_FRAMES)("renders the look sample %s for he and en", async (name, frame) => {
+    await mkdir(OUT, { recursive: true });
+    for (const lang of ["he", "en"] as const) {
+      const file = join(OUT, `look-${name}-${lang}.png`);
+      await renderReelStill(sampleLookTimeline(lang), file, frame);
       expect((await stat(file)).size).toBeGreaterThan(20_000);
     }
   }, 300_000);

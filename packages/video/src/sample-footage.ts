@@ -1,4 +1,4 @@
-import type { CaptionPage, Timeline, TimelineClip } from "@reel/core";
+import type { CaptionPage, Timeline, TimelineClip, TimelineCutaway } from "@reel/core";
 
 /**
  * A 7 s footage timeline: headline 0–60 (pills hidden), three pill pages with word start frames, a low pill (62 %),
@@ -58,5 +58,54 @@ export function sampleCutawayTimeline(lang: "he" | "en"): Timeline {
       { id: "b2", fromFrame: 45, durationInFrames: 45, layout: "full", media: { kind: "diagram", template: "compare", items: t.compare } },
       { id: "b3", fromFrame: 90, durationInFrames: 45, layout: "full", media: { kind: "diagram", template: "list", items: t.list } },
     ],
+  };
+}
+
+/** Frames worth looking at in sampleLookTimeline: [name, frame]. */
+export const LOOK_FRAMES = [
+  ["headline", 20], ["pill-callout", 60], ["whip-in", 77], ["kenburns", 100], ["exit", 110], ["split-slide", 122], ["split-seam", 140], ["cta", 165],
+] as const;
+
+/**
+ * 6 s of the whole look pass, frame-exact for LOOK_FRAMES:
+ * - headline 0–45
+ * - glass pills (red spoken word, red-capsule emphasis)
+ * - a callout 48–75
+ * - a full cutaway 75–113 (it leaves 7 frames before the split, so its exit transition is real): a drifting still with
+ *   whip transitions when `media` is given, else a list card zooming in and out
+ * - a split flow card 120–150 sliding in, with the pill on the seam
+ * - the CTA 150–180
+ * - the progress bar
+ * Without media the speaker is a graphic clip (no files needed).
+ */
+export function sampleLookTimeline(lang: "he" | "en", media?: { videoSrc: string; imageSrc: string }): Timeline {
+  const he = lang === "he";
+  const t = he
+    ? { small: "הטריק ש", big: "חוסך שעות", a: ["ככה", "עורכים", "רילס"], b: ["בלי", "לגעת", "בעריכה"], c: ["שלושה", "צעדים"], list: ["בלי חיבור", "בחינם", "בלי הגבלה"], flow: ["מקליטים", "מעלים", "מקבלים רילס"] }
+    : { small: "The trick that", big: "saves hours", a: ["This", "is", "how"], b: ["you", "edit", "reels"], c: ["three", "steps"], list: ["Offline", "Free", "No limits"], flow: ["Record", "Upload", "Get a reel"] };
+  const page = (words: string[], fromFrame: number, durationInFrames: number, topPct: number, emphasisAt = -1): CaptionPage => ({
+    fromFrame, durationInFrames, topPct, words: words.map((text, j) => ({ text, emphasis: j === emphasisAt, startFrame: fromFrame + j * 8 })),
+  });
+  const clips: TimelineClip[] = media
+    ? [{ sceneId: "s1", kind: "speaker", src: media.videoSrc, fromFrame: 0, durationInFrames: 180, motion: "none", transitionIn: "cut", source: { inMs: 0, outMs: 6000 }, crop: { cx: 0.5, cy: 0.4, scaleFrom: 1, scaleTo: 1.08 } }]
+    : [{ sceneId: "g1", kind: "graphic", fromFrame: 0, durationInFrames: 180, motion: "zoom_in", transitionIn: "cut" }];
+  const full: TimelineCutaway = media
+    ? { id: "b2", fromFrame: 75, durationInFrames: 38, layout: "full", transition: { in: "whip", out: "whip" }, media: { kind: "image", src: media.imageSrc, fit: "cover", kenBurns: 1.12, drift: { x: 0.03, y: 0 } } }
+    : { id: "b2", fromFrame: 75, durationInFrames: 38, layout: "full", transition: { in: "zoom", out: "zoom" }, media: { kind: "diagram", template: "list", items: t.list } };
+  return {
+    fps: 30, width: 1080, height: 1920, durationInFrames: 180, language: lang, direction: he ? "rtl" : "ltr",
+    style: { captionPreset: "pill", font: "Heebo", palette: ["#FF3B30", "#FFFFFF"] },
+    audio: { musicDuckingDb: -12 },
+    clips,
+    captions: {
+      words: [...t.a, ...t.b, ...t.c].map((text, i) => ({ text, startMs: 1500 + i * 300, endMs: 1500 + i * 300 + 250 })),
+      pages: [page(t.a, 45, 30, 62, 2), page(t.b, 75, 45, 62), page(t.c, 120, 30, 50)],
+    },
+    overlays: [],
+    hook: { patternBreak: "none", headline: { small: t.small, big: t.big, fromFrame: 0, durationInFrames: 45 } },
+    cutaways: [full, { id: "b3", fromFrame: 120, durationInFrames: 30, layout: "split", transition: { in: "slide", out: "cut" }, media: { kind: "diagram", template: "flow", items: t.flow } }],
+    callouts: [{ text: "1/3", fromFrame: 48, durationInFrames: 27, topPct: 22, align: "center" }],
+    ending: { kind: "cta", keyword: "AI", fromFrame: 150, durationInFrames: 30 },
+    progressBar: true,
   };
 }
