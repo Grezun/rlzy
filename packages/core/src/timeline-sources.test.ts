@@ -35,4 +35,12 @@ describe("timeline sources", () => {
     const mapped = mapTimelineSources(timeline(), (f) => `https://signed/${f}`);
     expect("sfx" in mapped).toBe(false);
   });
+  it("includes and maps cutaway media, never diagrams", () => {
+    const t = { ...timeline(), cutaways: [
+      { id: "b1", fromFrame: 0, durationInFrames: 30, layout: "full" as const, media: { kind: "video" as const, src: "asset:c.mp4", fit: "cover" as const } },
+      { id: "b2", fromFrame: 30, durationInFrames: 30, layout: "split" as const, media: { kind: "diagram" as const, template: "list" as const, items: ["a", "b"] } },
+    ] };
+    expect(timelineAssetFiles(t)).toContain("c.mp4");
+    expect(mapTimelineSources(t, (f) => `http://x/${f}`).cutaways![0].media).toMatchObject({ src: "http://x/c.mp4" });
+  });
 });

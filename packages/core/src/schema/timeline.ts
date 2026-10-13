@@ -68,6 +68,21 @@ export const CaptionPageSchema = z.object({
 });
 export type CaptionPage = z.infer<typeof CaptionPageSchema>;
 
+const CutawayFitSchema = z.enum(["cover", "contain_blur"]);
+/** A cutaway layer (spec §5.4): full replaces the picture, split fills the top half over a split speaker clip. */
+export const TimelineCutawaySchema = z.object({
+  id: z.string().min(1),
+  fromFrame: z.number().int().nonnegative(),
+  durationInFrames: z.number().int().positive(),
+  layout: z.enum(["full", "split"]),
+  media: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("image"), src: z.string().min(1), fit: CutawayFitSchema, kenBurns: z.number().min(1).max(1.5) }),
+    z.object({ kind: z.literal("video"), src: z.string().min(1), fit: CutawayFitSchema }),
+    z.object({ kind: z.literal("diagram"), template: z.enum(["compare", "list", "flow"]), items: z.array(z.string().min(1)).min(2).max(4) }),
+  ]),
+});
+export type TimelineCutaway = z.infer<typeof TimelineCutawaySchema>;
+
 export const TimelineSchema = z.object({
   fps: z.literal(30),
   width: z.literal(1080),
@@ -89,7 +104,7 @@ export const TimelineSchema = z.object({
   captions: z.object({ words: z.array(WordSchema), pages: z.array(CaptionPageSchema).optional() }),
   overlays: z.array(TimelineOverlaySchema),
   hook: z.object({
-    patternBreak: z.enum(["zoom_hit", "flash", "none"]),
+    patternBreak: z.enum(["zoom_hit", "flash", "broll", "none"]),
     headline: z.object({ small: z.string(), big: z.string().min(1), fromFrame: z.number().int().nonnegative(), durationInFrames: z.number().int().positive() }).optional(),
   }).optional(),
   ending: z.discriminatedUnion("kind", [
@@ -99,5 +114,6 @@ export const TimelineSchema = z.object({
   ]).optional(),
   sfx: z.array(z.object({ name: SfxNameSchema, frame: z.number().int().nonnegative(), src: z.string().min(1), volumeDb: z.number() })).optional(),
   patternBreaks: z.array(z.object({ frame: z.number().int().nonnegative(), kind: BreakKindSchema })).optional(),
+  cutaways: z.array(TimelineCutawaySchema).optional(),
 });
 export type Timeline = z.infer<typeof TimelineSchema>;

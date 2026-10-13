@@ -2,16 +2,16 @@ import { FPS } from "../assemble";
 import { ceilToCent, DEFAULT_COST_TABLE, estimateFootageCost, estimateReelSeconds, type CostTable } from "../cost";
 import type { EditPlan } from "../schema/edit-plan";
 import type { FaceBox, FaceTrack, Transcript } from "../schema/footage";
-import { TimelineSchema, type SfxName, type Timeline, type TimelineClip, type Word } from "../schema/timeline";
+import { TimelineSchema, type SfxName, type Timeline, type TimelineClip, type TimelineCrop, type TimelineCutaway, type Word } from "../schema/timeline";
 import { placeCaptionPages, screenChinY, type FaceSpan } from "./caption-place";
 import { addSnaps, applyBreaks, pickBreaks } from "./breaks";
 import { pageWords, type ReelWord } from "./captions";
-import { placeCutaways } from "./cutaways";
+import { cutawayFit, placeCutaways, type PlacedCutaway } from "./cutaways";
 import { faceAt } from "./face-track";
 import { centerFor, ctaStartFrame, framesToMs, maxScaleFor, msToFrames, planShots, shotCrop } from "./shots";
 import type { EditStyle } from "./style";
 
-export type FootageAssets = { videoSrc: string; voiceSrc?: string; musicSrc?: string; sfx: Partial<Record<SfxName, string>> };
+export type FootageAssets = { videoSrc: string; voiceSrc?: string; musicSrc?: string; sfx: Partial<Record<SfxName, string>>; cutaways?: Record<string, { kind: "image" | "video"; src: string }> };
 export type VoiceSegment = { inMs: number; outMs: number };
 export type CompiledFootage = { timeline: Timeline; voiceSegments: VoiceSegment[]; durationMs: number };
 
@@ -44,14 +44,13 @@ export function withFootageEstimate(plan: EditPlan, words: Word[], style: EditSt
   return { ...plan, estimate: { durationSec, credits } };
 }
 
-/** The edit compiler (spec §5): deterministic, no I/O. Plan 1 ignores cutaways (parseEditPlan already rejects them). */
+/** The edit compiler (spec §5): deterministic, no I/O. Cutaways (full, split, B-roll break) are placed by placeCutaways and emitted as timeline layers. */
 export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack: FaceTrack | null, assets: FootageAssets, style: EditStyle): CompiledFootage {
   const words = transcript.words;
   const shots = planShots(plan, words, style);
   if (!shots.length) throw new EmptyEditError();
   const total = shots.reduce((n, s) => n + s.frames, 0);
-  const requested = plan.hook.patternBreak === "broll" ? "none" : plan.hook.patternBreak;
-  const patternBreak = plan.ending.kind === "loop" && requested === "flash" ? "none" : requested;
+  const patternBreak = plan.ending.kind === "loop" && plan.hook.patternBreak === "flash" ? "none" : plan.hook.patternBreak;
 
   const clips: TimelineClip[] = [];
   const faces: (FaceBox | null)[] = [];
@@ -89,9 +88,21 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
   });
 
   const ctaStart = ctaStartFrame(plan, total, style);
-  const picked = pickBreaks(clips.map((c) => ({ fromFrame: c.fromFrame, frames: c.durationInFrames })), style.breaks, [[ctaStart, total]], []);
+  const placement = placeCutaways(plan, shots, style);
+  // A cutaway whose asset generation skipped is left out: the speaker stays on screen there.
+  const shown = placement.placed.filter((c) => c.source.kind === "diagram" || assets.cutaways?.[c.beatId]);
+  const picked = pickBreaks(
+    clips.map((c) => ({ fromFrame: c.fromFrame, frames: c.durationInFrames })),
+    style.breaks,
+    [[ctaStart, total], ...shown.map((c): [number, number] => [c.fromFrame, c.fromFrame + c.durationInFrames])],
+    shown.map((c) => c.fromFrame),
+  );
   const patternBreaks = applyBreaks(clips, picked, faces, style);
   addSnaps(clips, style);
+  const { clips: finalClips, faces: finalFaces } = splitForCutaways(clips, faces, shown.filter((c) => c.layout === "split"));
+  const cutaways: TimelineCutaway[] = shown.map((c) => ({
+    id: c.beatId, fromFrame: c.fromFrame, durationInFrames: c.durationInFrames, layout: c.layout, media: cutawayMedia(c, plan, assets, style),
+  }));
 
   const lastShot = shots[shots.length - 1];
   const speechEndFrame = total - (lastShot.frames - lastShot.speechFrames);
@@ -111,7 +122,7 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
     };
   });
 
-  const spans: FaceSpan[] = clips.map((c, i) => ({ fromFrame: c.fromFrame, endFrame: c.fromFrame + c.durationInFrames, chinY: screenChinY(faces[i], c.crop!) }));
+  const spans: FaceSpan[] = finalClips.map((c, i) => ({ fromFrame: c.fromFrame, endFrame: c.fromFrame + c.durationInFrames, chinY: c.layout === "split" ? null : screenChinY(finalFaces[i], c.crop!), split: c.layout === "split" }));
   const tops = placeCaptionPages(pages, spans, style.captionPlacement);
   const placedPages = pages.map((p, i) => ({ ...p, topPct: tops[i] }));
 
@@ -137,10 +148,14 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
       splitWords(headline.big).forEach((_, j) => cues.push({ name: pops[pop++ % 2], frame: (small + j) * style.headlineWordFrames, volumeDb: style.sfxVolumeDb.pop }));
     }
     patternBreaks.forEach((b, i) => cues.push({ name: whooshes[(i + 1) % 2], frame: b.frame, volumeDb: style.sfxVolumeDb.whoosh }));
+    for (const c of shown) {
+      if (c.layout !== "full" || cues.some((q) => q.name.startsWith("whoosh") && Math.abs(q.frame - c.fromFrame) <= 6)) continue;
+      cues.push({ name: "whoosh2", frame: c.fromFrame, volumeDb: style.sfxVolumeDb.whoosh });
+    }
     if (ending.kind === "cta") cues.push({ name: pops[pop++ % 2], frame: ending.fromFrame, volumeDb: style.sfxVolumeDb.pop });
     if (plan.sfx === "lively") {
-      clips.forEach((c, i) => {
-        if (i === 0 || c.crop!.scaleFrom === clips[i - 1].crop!.scaleFrom) return;
+      finalClips.forEach((c, i) => {
+        if (i === 0 || c.crop!.scaleFrom === finalClips[i - 1].crop!.scaleFrom) return;
         if (cues.some((q) => Math.abs(q.frame - c.fromFrame) <= 3)) return;
         cues.push({ name: "tick", frame: c.fromFrame, volumeDb: style.sfxVolumeDb.tick });
       });
@@ -160,13 +175,72 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
     direction: plan.language === "he" ? "rtl" : "ltr",
     style: { captionPreset: "pill", font: "Heebo", palette: ["#FEE80A", "#000000"] },
     audio: { voiceUrl: assets.voiceSrc, musicUrl: assets.musicSrc, musicDuckingDb: style.musicUnderVoiceDb },
-    clips,
+    clips: finalClips,
     captions: { words: reelWords.map(({ text, startMs, endMs }) => ({ text, startMs, endMs })), pages: placedPages },
     overlays: [],
     hook,
     ending,
     ...(sfx.length ? { sfx } : {}),
     ...(patternBreaks.length ? { patternBreaks } : {}),
+    ...(cutaways.length ? { cutaways } : {}),
   });
   return { timeline, voiceSegments, durationMs: framesToMs(total) };
+}
+
+function cutawayMedia(c: PlacedCutaway, plan: EditPlan, assets: FootageAssets, style: EditStyle): TimelineCutaway["media"] {
+  if (c.source.kind === "diagram") return { kind: "diagram", template: c.source.template, items: c.source.items };
+  const a = assets.cutaways![c.beatId];
+  const fit = cutawayFit(c.source, plan.source.extras, c.layout, style.cutaways.contentFitRatio);
+  return a.kind === "image" ? { kind: "image", src: a.src, fit, kenBurns: style.cutaways.kenBurns } : { kind: "video", src: a.src, fit };
+}
+
+/** The zoom a clip has reached `offset` frames in, as a fresh crop for the piece that continues from there. */
+function cropFrom(crop: TimelineCrop, offset: number, frames: number): TimelineCrop {
+  const { punchFrames, ...rest } = crop;
+  const span = punchFrames ?? Math.max(1, frames - 1);
+  const scaleFrom = r4(crop.scaleFrom + (crop.scaleTo - crop.scaleFrom) * Math.min(1, offset / span));
+  if (punchFrames) return offset >= punchFrames ? { ...rest, scaleFrom: crop.scaleTo } : { ...rest, scaleFrom, punchFrames: punchFrames - offset };
+  return { ...rest, scaleFrom };
+}
+
+/**
+ * Cuts speaker clips at split-cutaway boundaries. Pieces under a split cutaway play in the bottom half (layout "split"),
+ * cropped 9:8 around the face at scale 1; the other pieces continue the clip's zoom. Source spans continue frame-exactly.
+ */
+function splitForCutaways(clips: TimelineClip[], faces: (FaceBox | null)[], splits: PlacedCutaway[]): { clips: TimelineClip[]; faces: (FaceBox | null)[] } {
+  if (!splits.length) return { clips, faces };
+  const outClips: TimelineClip[] = [];
+  const outFaces: (FaceBox | null)[] = [];
+  const inSplit = (f: number) => splits.some((s) => f >= s.fromFrame && f < s.fromFrame + s.durationInFrames);
+  clips.forEach((clip, i) => {
+    const start = clip.fromFrame;
+    const end = start + clip.durationInFrames;
+    const cuts = [...new Set(splits.flatMap((s) => [s.fromFrame, s.fromFrame + s.durationInFrames]).filter((f) => f > start && f < end))].sort((a, b) => a - b);
+    const bounds = [start, ...cuts, end];
+    for (let k = 0; k < bounds.length - 1; k++) {
+      const from = bounds[k];
+      const len = bounds[k + 1] - from;
+      const offset = from - start;
+      const inMs = r3(clip.source!.inMs + framesToMs(offset));
+      const face = faces[i];
+      const piece: TimelineClip = {
+        ...clip,
+        sceneId: k === 0 ? clip.sceneId : `${clip.sceneId}.${k + 1}`,
+        fromFrame: from,
+        durationInFrames: len,
+        source: { inMs, outMs: r3(inMs + framesToMs(len)) },
+      };
+      if (offset > 0) delete piece.enter;
+      if (inSplit(from)) {
+        delete piece.enter;
+        piece.layout = "split";
+        piece.crop = { cx: 0.5, cy: face ? r4(Math.min(0.75, Math.max(0.25, face.y + face.h / 2))) : 0.5, scaleFrom: 1, scaleTo: 1 };
+      } else if (offset > 0) {
+        piece.crop = cropFrom(clip.crop!, offset, clip.durationInFrames);
+      }
+      outClips.push(piece);
+      outFaces.push(face);
+    }
+  });
+  return { clips: outClips, faces: outFaces };
 }

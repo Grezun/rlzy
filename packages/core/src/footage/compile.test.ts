@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ceilToCent, estimateFootageCost, estimateReelSeconds } from "../cost";
 import { TimelineSchema } from "../schema/timeline";
 import { parseEditPlan, type EditPlan } from "../schema/edit-plan";
-import { faceTrackFixture, footageTranscript, lowFaceTrackFixture, testEditStyle, validEditPlan } from "../testing/fixtures";
+import { EXTRA_IMG, faceTrackFixture, fixtureExtras, footageTranscript, lowFaceTrackFixture, testEditStyle, validEditPlan } from "../testing/fixtures";
 import { compileFootage, EmptyEditError, footageDurationMs, withFootageEstimate, type FootageAssets } from "./compile";
 import { framesToMs, planShots } from "./shots";
 
@@ -210,5 +210,53 @@ describe("motion", () => {
   });
   it("a short reel has no breaks", () => {
     expect(compile().timeline.patternBreaks).toBeUndefined();
+  });
+});
+
+describe("cutaways", () => {
+  const still = (layout: "full" | "split", atMs = 0, durationMs = 1500) => ({ source: { kind: "ai_broll" as const, prompt: "laptop", media: "image" as const }, layout, atMs, durationMs });
+  const on = (beatId: string, cutaway: unknown, over: object = {}) => plan({ beats: validEditPlan().beats.map((b) => (b.id === beatId ? { ...b, cutaway } : b)) as EditPlan["beats"], ...over });
+  const withArt = { ...assets, cutaways: { b1: { kind: "image" as const, src: "asset:b1.png" }, b2: { kind: "image" as const, src: "asset:b2.png" } } };
+
+  it("full: a cutaway layer over the speaker (who stays underneath), with a whoosh", () => {
+    const { timeline } = compileFootage(on("b2", still("full")), transcript, faceTrackFixture(), withArt, style);
+    expect(timeline.cutaways).toEqual([{ id: "b2", fromFrame: 89, durationInFrames: 45, layout: "full", media: { kind: "image", src: "asset:b2.png", fit: "cover", kenBurns: 1.06 } }]);
+    expect(timeline.clips.map((c) => c.sceneId)).toEqual(["b1-1", "b1-2", "b2-1", "b3-1"]);
+    expect(timeline.sfx?.map((c) => `${c.name}@${c.frame}`)).toContain("whoosh2@89");
+  });
+
+  it("split: the speaker clip is cut at the cutaway's end, the split part is cropped around the face, captions sit on the seam", () => {
+    const { timeline, voiceSegments } = compileFootage(on("b2", still("split")), transcript, faceTrackFixture(), withArt, style);
+    const [split, rest] = timeline.clips.filter((c) => c.sceneId.startsWith("b2-1"));
+    expect([split.sceneId, split.fromFrame, split.durationInFrames, split.layout]).toEqual(["b2-1", 89, 45, "split"]);
+    expect(split.crop).toEqual({ cx: 0.5, cy: 0.285, scaleFrom: 1, scaleTo: 1 });
+    expect([rest.sceneId, rest.fromFrame, rest.durationInFrames, rest.layout]).toEqual(["b2-1.2", 134, 12, undefined]);
+    expect(rest.source!.inMs).toBeCloseTo(split.source!.inMs + 1500, 2);
+    expect(rest.source!.outMs).toBeCloseTo(split.source!.inMs + (57 * 1000) / 30, 2);
+    expect(timeline.captions.pages![3].topPct).toBe(50);
+    expect(voiceSegments).toEqual(compile().voiceSegments); // the voice never changes
+  });
+
+  it("B-roll pattern break: the first cutaway opens the reel, full screen, 1 s, and the first shot doesn't punch", () => {
+    const { timeline } = compileFootage(on("b2", still("split"), { hook: { ...validEditPlan().hook, patternBreak: "broll" } }), transcript, faceTrackFixture(), withArt, style);
+    expect(timeline.cutaways!.map((c) => [c.id, c.fromFrame, c.durationInFrames, c.layout])).toEqual([["b2", 0, 30, "full"]]);
+    expect(timeline.hook!.patternBreak).toBe("broll");
+    expect(timeline.clips[0].crop!.punchFrames).toBeUndefined();
+  });
+
+  it("leaves out a cutaway whose asset is missing (skipped in generation); diagrams need no asset", () => {
+    expect(compileFootage(on("b2", still("full")), transcript, null, assets, style).timeline.cutaways).toBeUndefined();
+    const diagram = { source: { kind: "diagram", template: "list", items: ["אחת", "שתיים"] }, layout: "full", atMs: 0, durationMs: 1500 };
+    expect(compileFootage(on("b2", diagram), transcript, null, assets, style).timeline.cutaways![0].media).toEqual({ kind: "diagram", template: "list", items: ["אחת", "שתיים"] });
+  });
+
+  it("fits uploads to their slot and leaves out a cutaway that placement dropped", () => {
+    const up = plan({
+      source: { ...validEditPlan().source, extras: fixtureExtras() },
+      beats: validEditPlan().beats.map((b) => (b.id === "b1" ? { ...b, cutaway: { source: { kind: "upload", assetId: EXTRA_IMG }, layout: "full", atMs: 0, durationMs: 1000 } } : b.id === "b3" ? { ...b, cutaway: still("full") } : b)) as EditPlan["beats"],
+    });
+    const out = compileFootage(up, transcript, null, { ...assets, cutaways: { b1: { kind: "image", src: "asset:x.png" }, b3: { kind: "image", src: "asset:y.png" } } }, style);
+    expect(out.timeline.cutaways![0].media).toMatchObject({ kind: "image", fit: "contain_blur" });
+    expect(out.timeline.cutaways!.map((c) => c.id)).toEqual(["b1"]); // b3 ran under the CTA card
   });
 });

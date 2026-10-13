@@ -1,4 +1,5 @@
 import type { Cutaway, CutawaySource, EditPlan } from "../schema/edit-plan";
+import type { FootageExtra } from "../schema/footage";
 import type { Word } from "../schema/timeline";
 import { ctaStartFrame, framesToMs, msToFrames, planShots, type PlannedShot } from "./shots";
 import type { EditStyle } from "./style";
@@ -13,7 +14,7 @@ const secs = (frames: number) => (framesToMs(frames) / 1000).toFixed(1);
  * never overlap the previous cutaway, never under the CTA card, full cutaways cover at most (1 − minSpeakerShare) of
  * the reel. Shortened below minMs: dropped. Every trim or drop is a warning.
  */
-export function placeCutaways(plan: Pick<EditPlan, "beats" | "hook" | "ending">, shots: PlannedShot[], style: EditStyle): CutawayPlacement {
+export function placeCutaways(plan: Pick<EditPlan, "beats" | "hook" | "ending" | "source">, shots: PlannedShot[], style: EditStyle): CutawayPlacement {
   const total = shots.reduce((n, s) => n + s.frames, 0);
   const ctaStart = ctaStartFrame(plan, total, style);
   const spans = new Map<string, [number, number]>();
@@ -43,7 +44,10 @@ export function placeCutaways(plan: Pick<EditPlan, "beats" | "hook" | "ending">,
     let why = "";
     if (from >= beatEnd) why = "it starts after its beat ends once pauses are cut";
     else if (from + wanted > beatEnd) why = "it ran past the end of its beat";
-    let end = Math.min(from + wanted, beatEnd);
+    const extra = c.source.kind === "upload" ? plan.source.extras.find((e) => e.assetId === (c.source as { assetId: string }).assetId) : undefined;
+    const clipCap = extra?.kind === "video" ? msToFrames(extra.durationMs) : Infinity;
+    let end = Math.min(from + wanted, beatEnd, from + clipCap);
+    if (from + clipCap < Math.min(from + wanted, beatEnd)) why = `the uploaded clip is only ${(extra!.durationMs / 1000).toFixed(1)} s long`;
     if (from < prevEnd) {
       from = prevEnd;
       why = "it overlapped the previous cutaway";
@@ -67,6 +71,15 @@ export function placeCutaways(plan: Pick<EditPlan, "beats" | "hook" | "ending">,
     if (layout === "full") fullUsed += len;
   }
   return { placed, warnings };
+}
+
+/** Slot shapes: full 1080×1920, split top half 1080×960. AI media is made 9:16 and always covers. */
+export function cutawayFit(source: CutawaySource, extras: FootageExtra[], layout: "full" | "split", ratio: number): "cover" | "contain_blur" {
+  if (source.kind !== "upload") return "cover";
+  const e = extras.find((x) => x.assetId === source.assetId);
+  if (!e) return "cover";
+  const r = e.width / e.height / (layout === "full" ? 1080 / 1920 : 1080 / 960);
+  return r > ratio || r < 1 / ratio ? "contain_blur" : "cover";
 }
 
 export function planCutaways(plan: Pick<EditPlan, "beats" | "hook" | "ending" | "source">, words: Word[], style: EditStyle): CutawayPlacement {

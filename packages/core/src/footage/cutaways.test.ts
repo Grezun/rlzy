@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseEditPlan, type Cutaway, type EditPlan } from "../schema/edit-plan";
-import { footageTranscript, testEditStyle, validEditPlan } from "../testing/fixtures";
-import { applyCutawayBudget, cutawayBudget, planCutaways } from "./cutaways";
+import { EXTRA_IMG, EXTRA_VID, fixtureExtras, footageTranscript, testEditStyle, validEditPlan } from "../testing/fixtures";
+import { applyCutawayBudget, cutawayBudget, cutawayFit, planCutaways } from "./cutaways";
 
 const style = testEditStyle();
 const words = footageTranscript().words;
@@ -80,5 +80,25 @@ describe("cutaway budget", () => {
       "1 cutaways were removed (at most 3 for a 15 s reel).",
       "1 video cutaways became stills (at most 1 clips for a 15 s reel).",
     ]);
+  });
+});
+
+describe("uploads", () => {
+  it("shortens a cutaway to the uploaded clip's length", () => {
+    const p = parseEditPlan({
+      ...validEditPlan(),
+      source: { ...validEditPlan().source, extras: fixtureExtras() },
+      beats: validEditPlan().beats.map((b) => (b.id === "b1" ? { ...b, cutaway: { source: { kind: "upload", assetId: EXTRA_VID }, layout: "full", atMs: 0, durationMs: 3000 } } : b)),
+    });
+    const r = show(p);
+    expect(r.placed[0].durationInFrames).toBe(60);
+    expect(r.warnings).toEqual(["The cutaway in b1 was shortened to 2.0 s: the uploaded clip is only 2.0 s long."]);
+  });
+  it("shows an upload whole on a blurred fill when its shape doesn't fit the slot", () => {
+    const x = fixtureExtras();
+    expect(cutawayFit({ kind: "upload", assetId: EXTRA_IMG }, x, "full", 1.3)).toBe("contain_blur"); // landscape in 9:16
+    expect(cutawayFit({ kind: "upload", assetId: EXTRA_VID }, x, "full", 1.3)).toBe("cover"); // portrait in 9:16
+    expect(cutawayFit({ kind: "upload", assetId: EXTRA_VID }, x, "split", 1.3)).toBe("contain_blur"); // portrait in 9:8
+    expect(cutawayFit({ kind: "ai_broll", prompt: "x", media: "image" }, x, "split", 1.3)).toBe("cover");
   });
 });
