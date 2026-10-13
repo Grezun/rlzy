@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path, { join } from "node:path";
@@ -21,7 +21,8 @@ export class SegmentHelperError extends Error {
 
 /**
  * The matte model/cache id. BUMP THE VERSION SUFFIX whenever the Swift output changes (tools/segment-helper/.../main.swift):
- * the matte cache key carries only this id plus MATTE_REFINE, so an unbumped change reuses stale mattes.
+ * the matte cache key carries only this id plus MATTE_REFINE, so an unbumped change reuses stale mattes. Bump it too when
+ * MATTE_H264 or the structure of matteRefineFilter changes (neither is part of the key).
  */
 export const MATTE_MODEL = "vision/person-segmentation-accurate-v1";
 
@@ -66,6 +67,7 @@ export function makeMatte(video: string, out: string, opts: { faces?: string; ti
       if (err) {
         helper.kill("SIGKILL");
         encoder?.kill("SIGKILL");
+        rmSync(out, { force: true }); // never leave a partial file a cache check could take for a finished matte
         reject(err);
       } else resolve();
     };
@@ -92,6 +94,8 @@ export function makeMatte(video: string, out: string, opts: { faces?: string; ti
       enc.on("error", (e) => finish(new SegmentHelperError(`ffmpeg failed to start: ${e.message}`)));
       enc.on("close", (code) => {
         encoderCode = code;
+        // ffmpeg stopped early: the helper would block forever writing into the closed pipe, so fail now (this kills it).
+        if (code !== 0) return finish(new SegmentHelperError(`encoding the cut-out failed: ${encoderErr.trim().split("\n").slice(-3).join(" ")}`));
         settle();
       });
       helper.stdout.pipe(enc.stdin!);

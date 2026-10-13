@@ -48,6 +48,16 @@ describe("mattes", () => {
     expect(await matteCoverage(join(dir, "m.mp4"))).toBeLessThan(0.1);
   }, 300_000);
 
+  it.skipIf(!HELPER)("fails fast when ffmpeg cannot write the output, leaving no partial file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "matte-bad-out-"));
+    await makeTestVideo(join(dir, "t.mp4"), { durationSec: 1, width: 360, height: 640 });
+    const out = join(dir, "no-such-dir", "m.mp4");
+    const started = Date.now();
+    await expect(makeMatte(join(dir, "t.mp4"), out)).rejects.toThrow(/encoding the cut-out failed/);
+    expect(Date.now() - started).toBeLessThan(60_000);
+    expect(existsSync(out)).toBe(false);
+  }, 120_000);
+
   it.skipIf(!HELPER)("fails clearly for a missing file", async () => {
     await expect(makeMatte("/no/such/video.mp4", join(tmpdir(), "never.mp4"))).rejects.toThrow(/no such file/);
   });
