@@ -3,6 +3,7 @@
 **Date:** 2026-10-12
 **Status:** approved in chat, section by section; awaiting review of this written spec
 **Amended:** 2026-10-13, look pass (plan 2b, see §11): iOS glass captions in white and red, red-sticker headline and CTA, about one cutaway every 3 s, cutaway transitions, Ken Burns drift, iOS diagram cards, keyword callouts and a progress bar. The edits below are marked *(look pass)*.
+**Amended:** 2026-10-13, background replacement (plan 3, see §12), after the free segmentation spike passed. One AI scene per reel behind the cut-out speaker; brand backdrops and per-section backgrounds are deferred. The edits below are marked *(plan 3)*.
 **Builds on:** `2026-09-30-social-reel-agent-design.md` (the "footage" format and Phase 4 "own footage") and `2026-10-01-reel-styles-design.md` (merged to main at 825ef42)
 **Reference analysis:** `2026-10-12-footage-editor/reference-style-report.md`. It measures six reference reels the user supplied (@pauloshimas and Hebrew creators in the same style). Every number marked *(ref)* below comes from that report.
 
@@ -51,7 +52,7 @@ The work is delivered as **three implementation plans**, plus a look pass (2b) a
 | **1. Core edit** | Upload, ingest (working copy, transcription, face track), beat splitting, edit-plan schema and planner, edit compiler, pill captions, punch-in zooms, hook (headline, cold open, pattern break), CTA and loop ending, music (library, AI, none), sound-effect pack, plan review page, fake providers |
 | **2. Cutaways** | Higgsfield B-roll cutaways, AI shots of the user (Soul ID character, built on the existing `higgsfield-soul-id` flow), user's extra uploads, split-screen layout, three line-art diagram card templates |
 | **2b. Look pass** *(look pass)* | iOS glass-pill captions (white, red, Heebo), red-sticker headline and CTA, denser B-roll budget, cutaway transitions and Ken Burns drift, iOS diagram cards, keyword callouts, progress bar (§11) |
-| **3. Background replacement** | Person segmentation (Swift/Vision helper), speaker-plate compositing, AI and brand backgrounds, per-section changes. Gated on a free spike (§9). |
+| **3. Background replacement** | *(plan 3)* The cut-out at ingest (`tools/segment-helper`, Apple Vision), an FFmpeg speaker plate, and one AI scene per reel, proposed by Claude and editable on the review page. Brand backdrops and per-section changes are deferred (§12). The spike passed (§9). |
 
 **Out of scope:**
 - Long-recording clipping and no-speech editing (sub-projects 2 and 3).
@@ -74,7 +75,7 @@ The edit plan is what the user reviews. It is stored in the existing `storyboard
 EditPlan {
   format: "footage"
   version, title, language: "he" | "en", targetDurationSec: 15 | 30 | 45 | 60 | 90   // 90 is footage-only: raw talks run longer
-  source: { assetId, durationMs, transcriptAssetId, faceTrackAssetId, extras: FootageExtra[] }   // extras: plan 2, the conformed extra uploads
+  source: { assetId, durationMs, transcriptAssetId, faceTrackAssetId, matteAssetId?, extras: FootageExtra[] }   // extras: plan 2, the conformed extra uploads; matteAssetId: plan 3, the cut-out (absent: no replacement possible)
   beats: Beat[]                                // in source order; code splits them, Claude annotates
   hook: {
     coldOpenBeatId?: string                    // beat played first, then the reel continues from the start
@@ -84,7 +85,7 @@ EditPlan {
   }
   ending: { kind: "cta"; keyword: string } | { kind: "loop" } | { kind: "none" }
   background: { mode: "original" }
-            | { mode: "replace"; sections: { fromBeatId: string; source: { kind: "ai"; prompt: string } | { kind: "brand"; assetId: string } }[] }   // plan 3
+            | { mode: "replace"; sections: { fromBeatId: string; source: { kind: "ai"; prompt: string } | { kind: "brand"; assetId: string } }[] }   // plan 3: one "ai" section from the first beat; brand and more sections refused for now (§12)
   music: { kind: "library"; assetId: string } | { kind: "ai"; prompt: string } | { kind: "none" }
   sfx: "off" | "subtle" | "lively"
   estimate: { durationSec: number; credits: number }   // computed by code, not Claude
@@ -157,6 +158,7 @@ Edits save as a new version. A **Re-plan** button reruns `plan_footage` with an 
 
    Output is JSON of `{ tMs, x, y, w, h }`, normalised, stored as an asset.
 5. If Scribe returns fewer than 5 words, fail with "No speech found". That video belongs to the future no-speech editor.
+6. **Cut-out** *(plan 3)*. `tools/segment-helper` runs Vision `VNGeneratePersonSegmentationRequest` at `.accurate` on the working copy, after transcription. It keeps only the region connected to the face (from the face track) and blends each frame with the previous one. FFmpeg then erodes 2 px, stretches the contrast and blurs lightly, and stores a grey H.264 matte frame-aligned with the working copy (`source.matteAssetId`). It is free and takes about 3 min per minute of video on the M4 Air. A missing helper, a failure, a matte covering under 3 % of the frame, or one whose length is off by more than 100 ms is a plan warning, never a failure; that reel keeps its real background.
 
 ### 4.3 Plan job (`plan_footage`)
 - **Beat splitting (code).** Beats are split at sentence-ending punctuation and at pauses of 600 ms or more. A beat over 10 s is split at its longest internal pause. A beat under 1.2 s merges with its neighbour.
@@ -173,9 +175,10 @@ Edits save as a new version. A **Re-plan** button reruns `plan_footage` with an 
    - AI music: ElevenLabs Music, length fitted to the reel.
    - Library music: downloaded from the team library.
 2. **Background replacement (plan 3):**
-   - `face-helper segment` runs Vision `VNGeneratePersonSegmentationRequest` at quality `.accurate` and writes a grayscale mask video.
-   - FFmpeg composites the working copy over each section's background, using `alphamerge` then `overlay`, with mask edges feathered by about 3 px and the background slightly blurred.
-   - The result is a **speaker plate** video. Everything downstream uses the plate instead of the working copy.
+   - The matte comes from ingest (§4.2 step 6). Generation never pays for a background still when the matte is missing.
+   - One Higgsfield still per AI section, with the same model and price as B-roll stills ($0.04, 9:16), reserved against the approved estimate. There is one attempt.
+   - FFmpeg composites the working copy over the background using `alphamerge` then `overlay`. Mask edges are feathered by about 3 px. The background is blurred, a little desaturated and dimmed, and drifts slowly (a sine sway inside a 1.08× cover).
+   - The result is a **speaker plate** video. Everything downstream uses the plate instead of the working copy, so zooms, punch-ins and split crops move the speaker and the scene together.
 3. **Edit compiler** (§5) produces the `Timeline`.
 4. **Render and export:** the existing Remotion render and FFmpeg export, producing the reel MP4, preview, thumbnail and SRT.
 
@@ -266,7 +269,7 @@ English reels use the same components. RTL and LTR handling follows the existing
 
 **Team music library.** Tracks are uploaded on a settings page and tagged by mood (calm, upbeat, dramatic). Claude picks a track by mood tag.
 
-**Brand backdrops (plan 3).** Brand backdrops are uploaded on the same settings page.
+**Brand backdrops.** *(plan 3: deferred, §12.)* They will be uploaded on the same settings page.
 
 ## 7. Errors and edge cases
 
@@ -284,7 +287,7 @@ English reels use the same components. RTL and LTR handling follows the existing
 | Kept beats over target length | Warning with the actual length. Nothing is dropped silently. |
 | B-roll, AI self, AI background or AI music fails | One attempt per element, never resubmitted inside the job (no repeat paid calls; the gateway's own submit retries cover transient errors before a job exists). The element is skipped (speaker stays on screen, real background, no music) and the result page lists what was skipped. To retry, the user uses "Edit as new version" and approves again; finished elements come from the cache. A per-element retry button is deferred (not in plans 1–2). |
 | Spend | Capped at the approved estimate. A generation that would exceed it is skipped, with a note. |
-| Segmentation fails | The render uses the real background and says so. |
+| Segmentation fails | *(plan 3)* At ingest this covers a missing helper, an error, a near-empty matte or a wrong length. The plan warns "Background replacement is off for this video: …", and the background stays original. At generation it covers a missing matte, a still the estimate can't cover, a failed still or a failed composite: a note, the real background, never a second paid attempt. |
 | Worker crash | Existing heartbeat and requeue (3 attempts). Each step's outputs are cached assets, so a restart skips finished work. |
 
 ## 8. Data and code changes
@@ -297,7 +300,7 @@ English reels use the same components. RTL and LTR handling follows the existing
   - `assets_kind_check` gains `data`, for the transcript and face-track JSON.
   - New `team_music` table: id, storage path, title, mood, duration, created_by.
 - Plan 2: the footage storage policies also allow `footage/<projectId>/extra-[1-6].<ext>`; new `soul_characters` table (id, name 1–40, unique `reference_id`, created_by), readable by the team, insert-only for members.
-- Plan 3: new `brand_backdrops` table.
+- Plan 3: no migration *(plan 3)*. The matte id and the background live in the edit-plan JSON; `brand_backdrops` comes with brand backdrops (§12).
 
 **Packages:**
 - `@reel/core`:
@@ -305,7 +308,7 @@ English reels use the same components. RTL and LTR handling follows the existing
   - beat splitting
   - `compileFootage`
   - Timeline additions
-- `@reel/media`: reuses `conformVideo` and `extractAudio`, and adds mask compositing for plan 3.
+- `@reel/media`: reuses `conformVideo` and `extractAudio`. Plan 3 adds `makeMatte` (driving `segment-helper`) and `compositeSpeakerPlate`.
 - `@reel/engine`:
   - Scribe provider
   - ElevenLabs Music provider
@@ -317,8 +320,9 @@ English reels use the same components. RTL and LTR handling follows the existing
   - "Edit my video" card and upload form
   - footage review page
   - team music settings page
-  - (plan 3) brand backdrops
+  - (plan 3) the background choice and scene prompt on the review page (brand backdrops deferred)
 - `tools/face-helper`: the Swift CLI. It runs on macOS only, which suits the worker, since renders already run on the team Mac.
+- `tools/segment-helper` *(plan 3)*: the Swift cut-out CLI (macOS 14+), built with `npm run build:segment-helper`.
 
 ## 9. Testing
 
@@ -348,7 +352,8 @@ English reels use the same components. RTL and LTR handling follows the existing
   - `npm test`, typecheck and the web build pass
   - a browser check of the new screens
   - merge
-- **Spike before plan 3 (free, local, throwaway):** run Vision person segmentation on one user clip. Judge hair edges and movement, and measure seconds of processing per second of footage. If quality is not good enough, choose another matting approach before plan 3 is written.
+- **Spike before plan 3 (free, local, throwaway):** run Vision person segmentation on one user clip. Judge hair edges and movement, and measure seconds of processing per second of footage. If quality is not good enough, choose another matting approach before plan 3 is written. *(Passed 2026-10-13: `.accurate` is clean on face, beard, ears and shoulders with low flicker; there is grey haze at the hair against a white wall, and a nearby object is sometimes included. `.balanced` and instance masks are unusable. About 21 fps at 1080p on the M4 Air. See §12.)*
+- **Background preview (plan 3):** `npm run preview:background -- <clip> [<image>]` renders the cut-out over a scene plus the look sample over it. No keys, no cost.
 
 ## 10. Risks and notes
 
@@ -378,4 +383,40 @@ The background is plan 3. The rest is decided as follows. The values live in `ho
    - Keyword callouts (a new `Beat.callout`, at most one per 5 s, never over the face, never with a cutaway, the headline or the CTA card).
    - A thin red progress bar.
    - Effects never stack on one moment: pattern breaks keep off callouts and cutaways, and back-to-back cutaways leave with a cut.
+
+## 12. Amendment 2026-10-13: background replacement (plan 3)
+
+**What the user asked** (after the first real reels): an AI-generated topic scene behind the speaker. **Decided with the user:** an "AI scene per reel". The speaker is cut out for free on the Mac (Apple Vision) and placed in front of one Higgsfield still that fits the topic, at about $0.04 per reel. Claude proposes the scene; the user can edit it or keep the original background on the review page. The cost shows in the estimate. There is one paid attempt, and a failure keeps the real background with a note. The look must not fight the iOS glass captions and red stickers (§11): the speaker stays sharp, and the scene is softly blurred and a little darker.
+
+**Spike (free, 2026-10-13).**
+- Results:
+  - `.accurate` passed. It clean-cuts face, beard, ears and shoulders with low flicker.
+  - Haze remains at the top of the hair against a white wall.
+  - It occasionally keeps a wall chunk at the hair edge and sometimes includes a nearby object.
+  - A cheap refine (erode 2 px, contrast up, light blur) removed the wall chunks.
+  - A 50 % blend with the previous frame cut flicker (mean difference 0.24 → 0.18), with some lag on fast moves.
+  - Speed: about 21 fps at 1080p (a 60 s clip in about 3 min), slower when the Mac is hot.
+- Open risks: hair haze on bright walls, held objects, hands, long clips.
+
+**Rulings:**
+1. **Scope.**
+   - Plan 3 ships one AI scene per reel, a single section from the first beat.
+   - The `sections` and `brand` shapes stay in the schema (§3), and the core, pricing and compositing handle several sections. `parseEditPlan` refuses a second section and brand sources with plain "not yet" messages.
+   - Brand backdrops (the upload page and the `brand_backdrops` table) and per-section editing are deferred.
+2. **Where the matte is made.** At ingest, after transcription (§4.2 step 6), so the review page knows before approval whether replacement is possible, and no still is paid for on a video that can't use it. Every upload takes about 3 min more per minute of video, even if the user then keeps the original background.
+3. **How the matte is cleaned.**
+   - `.accurate` segmentation.
+   - Only the region connected to the face box (from the stored face track) is kept, so objects and wall chunks apart from the speaker drop out.
+   - A 50 % blend with the previous frame.
+   - Erode 2 px, a contrast stretch of 64…191 and a σ 0.8 blur.
+   - Stored as a separate grey H.264, frame-aligned with the working copy.
+4. **Compositing.** FFmpeg makes a speaker plate at generation, and it replaces the working copy (§4.4). Remotion masking and pre-merged VP9 alpha were rejected: the plate inherits every zoom, punch-in and split crop with no compiler or Remotion change, and ProRes 4444 is too heavy. The parallax runs in source time (a slow sine sway of the scene), so a jump cut can jump the scene slightly; the cut hides it.
+5. **Look** (`houseStyle.edit.background`):
+   - The scene covers the frame × 1.08, drifting 2.5 % over 24 s (x) and 38.4 s (y).
+   - Blur σ 5, saturation 0.9, luma × 0.90.
+   - Matte edges feathered 3 px.
+   - No light wrap for now.
+6. **Default.** Claude proposes "replace" with a one-sentence English scene (an empty place, no people or text) whenever there is a cut-out. It proposes "original" when the real setting is part of the message or the notes ask for it, and a re-plan keeps the previous choice. The still uses the B-roll model and price: Soul v2 standard, 9:16 1080p, $0.04.
+7. **Failures.** The ingest problems (§7) become a plan warning, and the plan is forced to the original background. Generation checks the matte before paying, reserves the still against the approved estimate, makes one attempt, and turns any failure into a note on the real background.
+8. **Fake worker.** Without the helper, it uses a still head-and-shoulders matte. Its background is a flat coloured fake still. The whole flow is free to click through.
 
