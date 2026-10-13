@@ -7,3 +7,4 @@ export * from "./export";
 export * from "./footage";
 export * from "./face";
 export * from "./segment";
+export * from "./plate";

@@ -70,3 +70,10 @@ export async function addExifOrientation(input: string, output: string, orientat
   // Right after the SOI marker (the first 2 bytes).
   await writeFile(output, Buffer.concat([jpeg.subarray(0, 2), app1, payload, jpeg.subarray(2)]));
 }
+
+/** The RGB of one frame region (an 8x8 crop at fraction fx, fy of the frame, averaged to one pixel) at `sec`. Tests only. */
+export async function pixelRgb(video: string, dir: string, sec: number, fx: number, fy: number): Promise<number[]> {
+  const out = join(dir, `px-${sec}-${fx}-${fy}.rgb`);
+  await runFfmpeg(["-ss", String(sec), "-i", video, "-vf", `crop=8:8:iw*${fx}:ih*${fy},scale=1:1`, "-frames:v", "1", "-f", "rawvideo", "-pix_fmt", "rgb24", out]);
+  return [...(await readFile(out))];
+}
