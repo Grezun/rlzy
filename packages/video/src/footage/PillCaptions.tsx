@@ -3,36 +3,42 @@ import React from "react";
 import { AbsoluteFill, Sequence, useCurrentFrame } from "remotion";
 import { HEEBO } from "../fonts";
 import { houseStyle } from "../house-style";
-import { activeWordIndex, captionHideRanges, emojiScale, popBounce, visiblePages, wordPop } from "./motion";
+import { glassStyle } from "./glass";
+import { activeWordIndex, captionHideRanges, emojiScale, popBounce, visiblePages, wordPulse } from "./motion";
 
 const c = houseStyle.captions;
 
+/** One page on an iOS glass pill: white text, the spoken word red with a pulse, Claude's emphasis word on a red capsule. */
 const PillPage: React.FC<{ page: CaptionPage; startAt: number; direction: Timeline["direction"] }> = ({ page, startAt, direction }) => {
   const frame = useCurrentFrame();
   const abs = startAt + frame;
   const active = activeWordIndex(page.words, abs);
   const emojiAt = page.words.at(-1)?.startFrame ?? startAt;
+  const e = c.emphasis;
   return (
     <div style={{ position: "absolute", top: `${page.topPct ?? c.topPct}%`, left: 0, right: 0, display: "flex", justifyContent: "center" }}>
       <div
         dir={direction}
         style={{
+          ...glassStyle(c.glass),
           transform: `translateY(-50%) scale(${popBounce(frame, c.popFrames, c.popFrom).toFixed(4)})`,
-          maxWidth: `${c.maxWidthPct}%`, background: c.pillColor, color: c.textColor, borderRadius: c.radius,
-          padding: `${c.padY}px ${c.padX}px`, fontFamily: HEEBO, fontWeight: 800, fontSize: c.fontSize, lineHeight: 1.25, textAlign: "center", direction,
+          opacity: Math.min(1, (frame + 1) / c.fadeFrames),
+          maxWidth: `${c.maxWidthPct}%`, color: c.textColor, borderRadius: c.radius, padding: `${c.padY}px ${c.padX}px`,
+          fontFamily: HEEBO, fontWeight: c.fontWeight, fontSize: c.fontSize, lineHeight: 1.25, textAlign: "center", direction, textShadow: c.textShadow,
         }}
       >
         {page.words.map((w, i) => {
           const on = i === active;
-          const pop = on ? wordPop(abs - (w.startFrame ?? startAt), c.activeWord.popFrames, c.activeWord.peak) : 1;
+          const scale = on ? wordPulse(abs - (w.startFrame ?? startAt), c.activeWord.upFrames, c.activeWord.downFrames, c.activeWord.peak) : 1;
           return (
             <React.Fragment key={i}>
               {i > 0 ? " " : null}
               <span
                 style={{
-                  color: w.emphasis ? c.emphasisColor : undefined, unicodeBidi: "isolate", display: "inline-block",
-                  transform: `scale(${pop.toFixed(4)})`,
-                  ...(on ? { background: c.activeWord.highlight, borderRadius: c.activeWord.radius, padding: `0 ${c.activeWord.padX}px`, margin: `0 -${c.activeWord.padX}px` } : {}),
+                  display: "inline-block", unicodeBidi: "isolate", transform: `scale(${scale.toFixed(4)})`,
+                  ...(w.emphasis
+                    ? { background: e.background, color: e.color, fontWeight: e.fontWeight, borderRadius: e.radius, padding: `0 ${e.padX}px`, textShadow: "none" }
+                    : on ? { color: c.activeWord.color } : {}),
                 }}
               >
                 {w.text}
@@ -51,8 +57,8 @@ const PillPage: React.FC<{ page: CaptionPage; startAt: number; direction: Timeli
 };
 
 /**
- * The footage caption preset "pill": rendered last in Reel, so it survives cuts. It gives way to the hook headline and
- * the CTA card (those show bigger text); the SRT keeps every page.
+ * The footage caption preset "pill": rendered above the clips, cutaways and callouts, so it survives cuts. It gives way to the hook
+ * headline and the CTA card (those show bigger text); the SRT keeps every page.
  */
 export const PillCaptions: React.FC<{ timeline: Timeline }> = ({ timeline }) => (
   <AbsoluteFill>

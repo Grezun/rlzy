@@ -1,5 +1,18 @@
 import type { EditStyle } from "@reel/core";
 
+/** iOS system colours (Apple HIG). The look pass uses white and red only: never yellow or orange (house-style.test). */
+export const IOS = {
+  red: "#FF3B30",
+  white: "#FFFFFF",
+  ink: "#1C1C1E", // label
+  secondary: "#8E8E93", // secondaryLabel
+  groupedBg: "#F2F2F7", // systemGroupedBackground
+  separator: "rgba(60,60,67,0.18)",
+} as const;
+
+/** Frosted dark glass: white text stays ≥ 4.5:1 even over a white diagram card or a flash (house-style.test). */
+const GLASS = { background: "rgba(22,22,24,0.62)", blurPx: 28, saturate: 1.8, border: "rgba(255,255,255,0.22)", shadow: "0 12px 32px rgba(0,0,0,0.28)" } as const;
+
 /**
  * The footage look and rhythm in one place (spec §6). Tune the reels here, not in the components.
  * (ref) values come from the reference report; the rest are first guesses to tune after real reels.
@@ -35,11 +48,17 @@ export const houseStyle = {
     cutaways: { minMs: 1000, minSpeakerShare: 0.4, brollBreakMs: 1000, kenBurns: 1.06, contentFitRatio: 1.3 },
   } satisfies EditStyle,
   captions: {
-    topPct: 45, fontSize: 66, textColor: "#000000", pillColor: "#FFFFFF", emphasisColor: "#E5262A", radius: 24, padX: 30, padY: 10, maxWidthPct: 86,
-    // Bouncier than plan 1's 0.9 → 1 over 4 frames, which read as no animation in the first real reel.
-    popFrames: 6, popFrom: 0.8,
+    topPct: 45, // only when a page has no position
+    fontSize: 64, fontWeight: 600, textColor: IOS.white, textShadow: "0 1px 2px rgba(0,0,0,0.35)",
+    glass: GLASS,
+    // 18 pt corner radius on a 402 pt-wide iPhone, scaled to 1080 px wide.
+    radius: 48, padX: 34, padY: 12, maxWidthPct: 86,
+    popFrames: 6, popFrom: 0.85, fadeFrames: 3,
     minVisibleFrames: 8,
-    activeWord: { peak: 1.12, popFrames: 3, highlight: "#FEE80A", padX: 8, radius: 12 },
+    // The spoken word turns iOS red and pulses 1 → 1.08 → 1 on its beat.
+    activeWord: { color: IOS.red, peak: 1.08, upFrames: 3, downFrames: 4 },
+    // Claude's emphasis word: white on a red capsule for the whole page (distinct from the spoken word).
+    emphasis: { background: IOS.red, color: IOS.white, fontWeight: 800, padX: 14, radius: 18 },
     emoji: { popFrames: 8, overshoot: 1.35 },
   },
   motion: { snapScale: 1.06, zoomBlurScale: 1.22, zoomBlurPx: 16 },
@@ -47,8 +66,16 @@ export const houseStyle = {
   cutaway: { blurPx: 40, dim: 0.35, fillScale: 1.15 },
   /** Spec §6 DiagramCard: white line art on near-black with violet wavy lines (ref R3 panels). */
   diagram: { bg: "#0B0A12", line: "#FFFFFF", wave: "#8B6CFF", waveOpacity: 0.35, stroke: 6, radius: 28, fontSize: 64, compactScale: 0.62, itemFrames: 8, popFrames: 6, iconSize: 64 },
-  /** Under the captions (y 45 %) so neither covers the face (eyes sit at y ≈ 0.21–0.28 (ref)). */
-  headline: { topPct: 58, smallSize: 62, bigSize: 168, smallColor: "#FFFFFF", bigColor: "#FEE80A", shadow: "0 8px 28px rgba(0,0,0,0.55)", popFrames: 4, popFrom: 0.6 },
-  cta: { topPct: 62, smallSize: 64, bigSize: 150, color: "#FFFFFF", keywordColor: "#FEE80A", shadow: "0 8px 28px rgba(0,0,0,0.55)", scrim: "linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%)", popFrames: 6, popFrom: 0.7 },
-  flash: { color: "#FFFFFF" },
+  /** Under the captions' range so neither covers the face. Small line on the caption glass, big words on a red sticker. */
+  headline: {
+    topPct: 58, smallSize: 58, smallWeight: 700, bigSize: 150, bigWeight: 800, color: IOS.white,
+    sticker: { color: IOS.red, radius: 36, padX: 36, padY: 4, tiltDeg: -2 },
+    shadow: "0 10px 30px rgba(0,0,0,0.35)", popFrames: 5, popFrom: 0.6,
+  },
+  cta: {
+    topPct: 62, smallSize: 64, smallWeight: 700, bigSize: 140, bigWeight: 800, color: IOS.white,
+    sticker: { color: IOS.red, radius: 36, padX: 40, padY: 4, tiltDeg: -2 },
+    shadow: "0 10px 30px rgba(0,0,0,0.45)", scrim: "linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%)", popFrames: 6, popFrom: 0.7,
+  },
+  flash: { color: IOS.white },
 };

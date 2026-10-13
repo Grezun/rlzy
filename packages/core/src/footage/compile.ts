@@ -175,7 +175,7 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
     durationInFrames: total,
     language: plan.language,
     direction: plan.language === "he" ? "rtl" : "ltr",
-    style: { captionPreset: "pill", font: "Heebo", palette: ["#FEE80A", "#000000"] },
+    style: { captionPreset: "pill", font: "Heebo", palette: ["#FF3B30", "#FFFFFF"] },
     audio: { voiceUrl: assets.voiceSrc, musicUrl: assets.musicSrc, musicDuckingDb: style.musicUnderVoiceDb },
     clips: finalClips,
     captions: { words: reelWords.map(({ text, startMs, endMs }) => ({ text, startMs, endMs })), pages: placedPages },

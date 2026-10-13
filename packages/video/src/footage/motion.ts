@@ -30,8 +30,12 @@ const easeOutBack = (p: number) => {
 /** Page pop with a small overshoot (≈ 2 % past full size at from = 0.8). */
 export const popBounce = (frame: number, frames: number, from: number) => from + (1 - from) * easeOutBack(clamp01(frame / frames));
 
-/** Starts at `peak` and settles to 1: the spoken word "hits". */
-export const wordPop = (frame: number, frames: number, peak: number) => 1 + (peak - 1) * (1 - easeOutCubic(clamp01(frame / frames)));
+/** The spoken word's pulse: 1 → peak over `up` frames, then back to 1 over `down` frames. */
+export function wordPulse(frame: number, up: number, down: number, peak: number): number {
+  if (frame <= 0) return 1;
+  if (frame < up) return 1 + (peak - 1) * easeOutCubic(frame / up);
+  return 1 + (peak - 1) * (1 - easeOutCubic(clamp01((frame - up) / down)));
+}
 
 /** Emoji: 0 → overshoot over the first 60 %, then back to 1. */
 export function emojiScale(frame: number, frames: number, overshoot: number): number {

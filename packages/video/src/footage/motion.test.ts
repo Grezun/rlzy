@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, kenBurnsScale, revealedCount, speakerTransform, splitTransform, visiblePages, wordPop } from "./motion";
+import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, kenBurnsScale, revealedCount, speakerTransform, splitTransform, visiblePages, wordPulse } from "./motion";
 
 describe("speakerTransform", () => {
   const punch = { cx: 0.5, cy: 0.4, scaleFrom: 1, scaleTo: 1.3, punchFrames: 6 };
@@ -64,9 +64,14 @@ describe("word, page and emoji pops", () => {
     expect([5, 10, 25, 99].map((f) => activeWordIndex(words, f))).toEqual([-1, 0, 1, 2]);
     expect(activeWordIndex([{}, {}], 50)).toBe(-1);
   });
-  it("pops the active word from 1.12 back to 1 over 3 frames", () => {
-    expect(wordPop(0, 3, 1.12)).toBeCloseTo(1.12);
-    expect(wordPop(3, 3, 1.12)).toBeCloseTo(1);
+  it("pulses the spoken word 1 → 1.08 → 1 (3 frames up, 4 down)", () => {
+    expect(wordPulse(-2, 3, 4, 1.08)).toBe(1);
+    expect(wordPulse(0, 3, 4, 1.08)).toBe(1);
+    expect(wordPulse(1, 3, 4, 1.08)).toBeGreaterThan(1.03);
+    expect(wordPulse(3, 3, 4, 1.08)).toBeCloseTo(1.08, 6);
+    expect(wordPulse(5, 3, 4, 1.08)).toBeLessThan(1.08);
+    expect(wordPulse(7, 3, 4, 1.08)).toBeCloseTo(1, 6);
+    expect(wordPulse(40, 3, 4, 1.08)).toBe(1);
   });
   it("bounces pages in from 80 % with a small overshoot", () => {
     expect(popBounce(0, 6, 0.8)).toBeCloseTo(0.8);
