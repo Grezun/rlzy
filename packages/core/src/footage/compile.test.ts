@@ -244,6 +244,13 @@ describe("cutaways", () => {
     expect(timeline.clips[0].crop!.punchFrames).toBeUndefined();
   });
 
+  it("B-roll opening whose cutaway was skipped in generation falls back to a zoom hit on the first shot (never a whoosh over nothing)", () => {
+    const { timeline } = compileFootage(on("b2", still("split"), { hook: { ...validEditPlan().hook, patternBreak: "broll" } }), transcript, faceTrackFixture(), assets, style);
+    expect(timeline.cutaways).toBeUndefined();
+    expect(timeline.hook!.patternBreak).toBe("zoom_hit");
+    expect(timeline.clips[0].crop).toMatchObject({ scaleFrom: 1, scaleTo: 1.3, punchFrames: 6 });
+  });
+
   it("leaves out a cutaway whose asset is missing (skipped in generation); diagrams need no asset", () => {
     expect(compileFootage(on("b2", still("full")), transcript, null, assets, style).timeline.cutaways).toBeUndefined();
     const diagram = { source: { kind: "diagram", template: "list", items: ["אחת", "שתיים"] }, layout: "full", atMs: 0, durationMs: 1500 };

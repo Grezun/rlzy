@@ -50,7 +50,12 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
   const shots = planShots(plan, words, style);
   if (!shots.length) throw new EmptyEditError();
   const total = shots.reduce((n, s) => n + s.frames, 0);
-  const patternBreak = plan.ending.kind === "loop" && plan.hook.patternBreak === "flash" ? "none" : plan.hook.patternBreak;
+  const placement = placeCutaways(plan, shots, style);
+  // A cutaway whose asset generation skipped is left out: the speaker stays on screen there.
+  const shown = placement.placed.filter((c) => c.source.kind === "diagram" || assets.cutaways?.[c.beatId]);
+  const wanted = plan.ending.kind === "loop" && plan.hook.patternBreak === "flash" ? "none" : plan.hook.patternBreak;
+  // A B-roll opening with its cutaway left out would whoosh over nothing on frame 0: punch in on the speaker instead.
+  const patternBreak = wanted === "broll" && !shown.some((c) => c.pulled) ? "zoom_hit" : wanted;
 
   const clips: TimelineClip[] = [];
   const faces: (FaceBox | null)[] = [];
@@ -88,9 +93,6 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
   });
 
   const ctaStart = ctaStartFrame(plan, total, style);
-  const placement = placeCutaways(plan, shots, style);
-  // A cutaway whose asset generation skipped is left out: the speaker stays on screen there.
-  const shown = placement.placed.filter((c) => c.source.kind === "diagram" || assets.cutaways?.[c.beatId]);
   const picked = pickBreaks(
     clips.map((c) => ({ fromFrame: c.fromFrame, frames: c.durationInFrames })),
     style.breaks,

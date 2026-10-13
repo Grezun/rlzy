@@ -153,11 +153,11 @@ describe("cutaways from Claude's draft", () => {
     const plan = buildEditPlan(withCuts({ b1: { kind: "ai_self", prompt: "the person on a plane" } }, { hook: { ...draft().hook, patternBreak: "broll" } }), REQ, beats, style);
     expect(plan.beats[0].cutaway).toBeUndefined();
     expect(plan.hook.patternBreak).toBe("zoom_hit");
-    expect(plan.warnings).toEqual(["1 AI shots of you were removed (no character is picked).", "The B-roll opening had no cutaway left, so it became a zoom hit."]);
+    expect(plan.warnings).toEqual(["1 AI shot of you was removed (no character is picked).", "The B-roll opening had no cutaway left, so it became a zoom hit."]);
   });
   it("tells Claude the budget, the uploads and the character", () => {
     const user = footageUserPrompt(RICH, beats);
-    expect(user).toContain('Cutaway budget: at most 3 cutaways (at most 1 video clips); at most 1 AI shots of the speaker (character "Alex").');
+    expect(user).toContain('Cutaway budget: at most 3 cutaways (at most 1 video clip); at most 1 AI shot of the speaker (character "Alex").');
     expect(user).toContain('- x1 (photo, landscape) "צילום מסך"');
     expect(user).toContain('- x2 (clip, 2.0 s, portrait) "demo clip"');
     expect(user).toContain("Background replacement is not available in this version: never mention it.");

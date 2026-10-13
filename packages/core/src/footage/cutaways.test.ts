@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseEditPlan, type Cutaway, type EditPlan } from "../schema/edit-plan";
 import { EXTRA_IMG, EXTRA_VID, fixtureExtras, footageTranscript, testEditStyle, validEditPlan } from "../testing/fixtures";
+import { plural } from "../plural";
 import { applyCutawayBudget, cutawayBudget, cutawayFit, planCutaways } from "./cutaways";
 
 const style = testEditStyle();
@@ -76,10 +77,22 @@ describe("cutaway budget", () => {
       ["ai_broll:video", "ai_broll:image", undefined, "ai_broll:video", "diagram", undefined, undefined],
     );
     expect(r.warnings).toEqual([
-      "1 AI shots of you were removed (no character is picked).",
-      "1 cutaways were removed (at most 3 for a 15 s reel).",
-      "1 video cutaways became stills (at most 1 clips for a 15 s reel).",
+      "1 AI shot of you was removed (no character is picked).",
+      "1 cutaway was removed (at most 3 for a 15 s reel).",
+      "1 video cutaway became a still (at most 1 video clip for a 15 s reel).",
     ]);
+  });
+  it("says counts other than 1 in the plural, and a budget of 1 in the singular", () => {
+    const vid = (kind: "ai_broll" | "ai_self"): Cutaway => ({ source: { kind, prompt: "x", media: "video" }, layout: "full", atMs: 0, durationMs: 1000 });
+    const beats = ["ai_self", "ai_self", "ai_self", "ai_broll", "ai_broll", "ai_broll", "ai_broll", "ai_broll"].map((k, i) => ({ id: `b${i + 1}`, keep: true, cutaway: vid(k as "ai_broll" | "ai_self") }));
+    expect(applyCutawayBudget(beats, { max: 3, maxVideo: 1, maxSelf: 1 }, 15).warnings).toEqual([
+      "2 AI shots of you were removed (at most 1 for a 15 s reel).",
+      "3 cutaways were removed (at most 3 for a 15 s reel).",
+      "2 video cutaways became stills (at most 1 video clip for a 15 s reel).",
+    ]);
+    expect(plural(1, "clip", "clips")).toBe("1 clip");
+    expect(plural(0, "clip", "clips")).toBe("0 clips");
+    expect(plural(2, "clip", "clips")).toBe("2 clips");
   });
 });
 

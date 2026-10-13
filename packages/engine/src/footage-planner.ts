@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import {
-  EditPlanDraftSchema, LENGTH_TOLERANCE, applyCutawayBudget, cutawayBudget, parseEditPlan, splitBeats, withFootageEstimate,
+  EditPlanDraftSchema, LENGTH_TOLERANCE, applyCutawayBudget, cutawayBudget, parseEditPlan, plural, splitBeats, withFootageEstimate,
   type BeatSpan, type Cutaway, type DraftCutaway, type EditPlan, type EditPlanDraft, type EditStyle, type FootageExtra, type FootageSettings, type FootageSource, type MusicMood, type Transcript,
 } from "@reel/core";
 
@@ -78,8 +78,8 @@ const LANGUAGE = { he: "Hebrew", en: "English" } as const;
 
 function cutawayBudgetLine(req: FootagePlanRequest): string {
   const b = cutawayBudget(req.settings.targetDurationSec, !!req.character);
-  const self = req.character ? `at most ${b.maxSelf} AI shots of the speaker (character "${req.character.name}").` : "no AI shots of the speaker (no character).";
-  return `Cutaway budget: at most ${b.max} cutaways (at most ${b.maxVideo} video clips); ${self}`;
+  const self = req.character ? `at most ${plural(b.maxSelf, "AI shot", "AI shots")} of the speaker (character "${req.character.name}").` : "no AI shots of the speaker (no character).";
+  return `Cutaway budget: at most ${plural(b.max, "cutaway", "cutaways")} (at most ${plural(b.maxVideo, "video clip", "video clips")}); ${self}`;
 }
 
 function uploadLines(extras: FootageExtra[]): string[] {

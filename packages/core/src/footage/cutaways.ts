@@ -3,6 +3,7 @@ import type { FootageExtra } from "../schema/footage";
 import type { Word } from "../schema/timeline";
 import { ctaStartFrame, framesToMs, msToFrames, planShots, type PlannedShot } from "./shots";
 import type { EditStyle } from "./style";
+import { plural } from "../plural";
 
 export type PlacedCutaway = { beatId: string; source: CutawaySource; layout: "full" | "split"; fromFrame: number; durationInFrames: number; pulled: boolean };
 export type CutawayPlacement = { placed: PlacedCutaway[]; warnings: string[] };
@@ -129,9 +130,9 @@ export function applyCutawayBudget<B extends { id: string; keep: boolean; cutawa
     return b;
   });
   const warnings = [
-    ...(selfRemoved ? [`${selfRemoved} AI shots of you were removed (${budget.maxSelf === 0 ? "no character is picked" : `at most ${budget.maxSelf} for a ${targetSec} s reel`}).`] : []),
-    ...(removed ? [`${removed} cutaways were removed (at most ${budget.max} for a ${targetSec} s reel).`] : []),
-    ...(stilled ? [`${stilled} video cutaways became stills (at most ${budget.maxVideo} clips for a ${targetSec} s reel).`] : []),
+    ...(selfRemoved ? [`${plural(selfRemoved, "AI shot of you was", "AI shots of you were")} removed (${budget.maxSelf === 0 ? "no character is picked" : `at most ${budget.maxSelf} for a ${targetSec} s reel`}).`] : []),
+    ...(removed ? [`${plural(removed, "cutaway was", "cutaways were")} removed (at most ${budget.max} for a ${targetSec} s reel).`] : []),
+    ...(stilled ? [`${plural(stilled, "video cutaway became a still", "video cutaways became stills")} (at most ${plural(budget.maxVideo, "video clip", "video clips")} for a ${targetSec} s reel).`] : []),
   ];
   return { beats: out, warnings };
 }
