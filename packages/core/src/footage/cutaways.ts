@@ -32,6 +32,10 @@ const secs = (frames: number) => (framesToMs(frames) / 1000).toFixed(1);
  * Spec §5.4–5.5, in reel order (the B-roll break's cutaway first): place at beat start + atMs, clip to the beat,
  * never overlap the previous cutaway, never under the CTA card, full cutaways cover at most (1 − minSpeakerShare) of
  * the reel. Shortened below minMs: dropped. Every trim or drop is a warning.
+ * A gap of 1..backToBackFrames before the previous cutaway would flash the speaker between two hard cuts, so it is
+ * closed: the previous cutaway runs on to this one's start (at most backToBackFrames past its beat; estimate,
+ * generation and callouts all read these lengths). When it can't (an uploaded clip with no frames left, or no full-screen
+ * share left), this cutaway starts early at the previous one's end instead.
  */
 export function placeCutaways(plan: Pick<EditPlan, "beats" | "hook" | "ending" | "source">, shots: PlannedShot[], style: EditStyle): CutawayPlacement {
   const total = shots.reduce((n, s) => n + s.frames, 0);
@@ -44,6 +48,7 @@ export function placeCutaways(plan: Pick<EditPlan, "beats" | "hook" | "ending" |
   const maxFull = Math.floor(total * (1 - style.cutaways.minSpeakerShare));
   const share = `at least ${Math.round(style.cutaways.minSpeakerShare * 100)}% of the reel must show you`;
   const placed: PlacedCutaway[] = [];
+  const caps: number[] = [];
   const warnings: string[] = [];
   let prevEnd = 0;
   let fullUsed = 0;
@@ -65,12 +70,21 @@ export function placeCutaways(plan: Pick<EditPlan, "beats" | "hook" | "ending" |
       from = prevEnd;
       why = "it overlapped the previous cutaway";
     }
+    const prev = placed[placed.length - 1];
+    const gap = prev ? from - prevEnd : 0;
+    const bridge = gap > 0 && gap <= style.cutaways.backToBackFrames;
+    const runOn = bridge && prev.durationInFrames + gap <= caps[caps.length - 1] && (prev.layout !== "full" || fullUsed + gap <= maxFull);
+    if (bridge && !runOn) {
+      from = prevEnd;
+      end = Math.min(end, from + clipCap);
+    }
+    const runOnFull = runOn && prev.layout === "full" ? gap : 0;
     if (end > ctaStart) {
       end = ctaStart;
       why = "it ran under the CTA card";
     }
-    if (layout === "full" && fullUsed + (end - from) > maxFull) {
-      end = from + Math.max(0, maxFull - fullUsed);
+    if (layout === "full" && fullUsed + runOnFull + (end - from) > maxFull) {
+      end = from + Math.max(0, maxFull - fullUsed - runOnFull);
       why = share;
     }
     const len = end - from;
@@ -79,7 +93,12 @@ export function placeCutaways(plan: Pick<EditPlan, "beats" | "hook" | "ending" |
       continue;
     }
     if (len < wanted) warnings.push(`The cutaway in ${id} was shortened to ${secs(len)} s: ${why}.`);
+    if (runOn) {
+      prev.durationInFrames += gap;
+      fullUsed += runOnFull;
+    }
     placed.push({ beatId: id, source: c.source, layout, fromFrame: from, durationInFrames: len, pulled });
+    caps.push(clipCap);
     prevEnd = end;
     if (layout === "full") fullUsed += len;
   }

@@ -48,6 +48,25 @@ describe("placeCutaways", () => {
     const dropped = parseEditPlan({ ...validEditPlan(), beats: validEditPlan().beats.map((b) => (b.id === "b2" ? { ...b, keep: false, cutaway: img(0, 1000) } : b)) });
     expect(show(dropped).placed).toEqual([]);
   });
+  it("closes a gap of up to 6 frames before the next cutaway by running the earlier one on, so the speaker never flashes between two cuts", () => {
+    const r = show(plan({ b1: img(200, 2667), b2: img(0, 1000) })); // b1's cutaway ends at 86, b2's starts at 89: a 3-frame gap
+    expect(r.placed.map((c) => [c.beatId, c.fromFrame, c.durationInFrames])).toEqual([["b1", 6, 83], ["b2", 89, 30]]);
+    expect(r.warnings).toEqual([]);
+    expect(cutawayTransitions(r.placed, style)).toEqual([{ in: "whip", out: "cut" }, { in: "cut", out: "zoom" }]);
+    // a 7-frame gap is left alone
+    expect(show(plan({ b1: img(200, 2533), b2: img(0, 1000) })).placed.map((c) => [c.fromFrame, c.durationInFrames])).toEqual([[6, 76], [89, 30]]);
+  });
+  it("starts the next cutaway early instead when the earlier one is an uploaded clip with no frames left", () => {
+    const p = parseEditPlan({
+      ...validEditPlan(),
+      source: { ...validEditPlan().source, extras: fixtureExtras() },
+      beats: validEditPlan().beats.map((b) =>
+        b.id === "b1" ? { ...b, cutaway: { source: { kind: "upload", assetId: EXTRA_VID }, layout: "full", atMs: 900, durationMs: 3000 } } : b.id === "b2" ? { ...b, cutaway: img(0, 1000) } : b,
+      ),
+    });
+    const r = show(p); // the 2.0 s clip runs 27–87, b2's cutaway would start at 89
+    expect(r.placed.map((c) => [c.beatId, c.fromFrame, c.durationInFrames])).toEqual([["b1", 27, 60], ["b2", 87, 32]]);
+  });
   it("is deterministic", () => {
     const p = plan({ b1: img(500, 1500), b2: img(0, 3000) });
     expect(JSON.stringify(show(p))).toBe(JSON.stringify(show(p)));
