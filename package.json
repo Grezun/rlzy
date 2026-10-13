@@ -11,6 +11,7 @@
     "reel": "tsx packages/engine/src/cli.ts",
     "studio": "npm run studio -w @reel/video",
     "preview:look": "tsx packages/engine/scripts/preview-look.ts",
+    "preview:background": "tsx packages/engine/scripts/preview-background.ts",
     "smoke:higgsfield": "tsx packages/engine/scripts/smoke-higgsfield.ts",
     "sfx:generate": "tsx packages/engine/scripts/generate-sfx.ts",
     "build:face-helper": "swift build -c release --package-path tools/face-helper",
