@@ -90,5 +90,9 @@ export const houseStyle = {
     sticker: { color: IOS.red, radius: 36, padX: 40, padY: 4, tiltDeg: -2 },
     shadow: "0 10px 30px rgba(0,0,0,0.45)", scrim: "linear-gradient(180deg, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%)", popFrames: 6, popFrom: 0.7,
   },
+  /** Look pass callout: a white sticker badge with red text that springs in, tilted like a sticker. */
+  callout: { fontSize: 52, fontWeight: 800, color: IOS.red, background: IOS.white, radius: 40, padX: 30, padY: 8, tiltDeg: -4, shadow: "0 10px 28px rgba(0,0,0,0.30)", spring: { stiffness: 220, damping: 14 }, outFrames: 5 },
+  /** A thin progress bar along the top edge of footage reels. */
+  progress: { heightPx: 8, color: IOS.red, track: "rgba(255,255,255,0.28)", radius: 4 },
   flash: { color: IOS.white },
 };

@@ -172,3 +172,13 @@ export const drawProgress = (frame: number, frames: number) => easeOutCubic(clam
 
 /** Inline padding a compare tile needs on its seam side so the VS badge (radius icon/2 plus its ring, half-sunk into the tile past half the gap) never touches the text. */
 export const badgeClearance = (icon: number, ring: number, gap: number, clear: number) => icon / 2 + ring - gap / 2 + clear;
+
+/** Callout badge scale: springs in (about 19 % overshoot at 220/14), then shrinks to 0 over the last outFrames. */
+export function calloutScale(frame: number, durationInFrames: number, spring: { stiffness: number; damping: number }, outFrames: number): number {
+  const s = springValue(frame + 1, spring);
+  const left = durationInFrames - frame;
+  return left <= outFrames ? s * easeOutCubic(clamp01((left - 1) / outFrames)) : s;
+}
+
+/** Share of the reel shown once this frame is on screen (0-1). */
+export const progressShare = (frame: number, total: number) => clamp01((frame + 1) / Math.max(1, total));

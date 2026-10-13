@@ -6,6 +6,8 @@ import { Clip } from "./Clip";
 import { Cutaways } from "./footage/Cutaways";
 import { CtaCard } from "./footage/CtaCard";
 import { HookHeadline } from "./footage/HookHeadline";
+import { Callouts } from "./footage/Callouts";
+import { ProgressBar } from "./footage/ProgressBar";
 import { PatternBreak } from "./footage/PatternBreak";
 import { PillCaptions } from "./footage/PillCaptions";
 import { SfxCues } from "./footage/SfxCues";
@@ -63,7 +65,9 @@ export const Reel: React.FC<ReelProps> = ({ timeline }) => {
       <HookHeadline timeline={timeline} />
       <CtaCard timeline={timeline} />
       <PatternBreak timeline={timeline} />
+      <Callouts timeline={timeline} />
       <CaptionLayer timeline={timeline} />
+      <ProgressBar timeline={timeline} />
       <SfxCues timeline={timeline} />
       {audio.voiceUrl ? <Audio src={audio.voiceUrl} /> : null}
       {audio.musicUrl ? <Audio src={audio.musicUrl} loop volume={Math.pow(10, audio.musicDuckingDb / 20)} /> : null}

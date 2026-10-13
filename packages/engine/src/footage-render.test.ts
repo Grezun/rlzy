@@ -21,9 +21,9 @@ describe("footage render (speaker shot, flash)", () => {
       expect(await averageLuma(join(out, "footage-flash.png"))).toBeGreaterThan(200);
       expect(await averageLuma(join(out, "footage-speaker.png"))).toBeLessThan(200);
       expect((await stat(join(out, "footage-speaker.png"))).size).toBeGreaterThan(50_000);
-      // The zoomed video covers the whole frame: the top 1 % rows are not a black band.
+      // The zoomed video covers the whole frame: the rows just below the progress bar are not a black band.
       const top = join(dir, "speaker-top.png");
-      await runFfmpeg(["-i", join(out, "footage-speaker.png"), "-vf", "crop=iw:ih*0.01:0:0", top]);
+      await runFfmpeg(["-i", join(out, "footage-speaker.png"), "-vf", "crop=iw:ih*0.01:0:ih*0.01", top]);
       expect(await averageLuma(top)).toBeGreaterThan(40);
     } finally {
       await server.close();

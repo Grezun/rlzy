@@ -12,6 +12,7 @@ describe("footage components (stills)", () => {
     ["pill-active-word", 70],
     ["pill-emphasis-emoji", 110],
     ["cta-card", 160],
+    ["callout-progress", 80],
   ] as const)("renders %s for he and en", async (name, frame) => {
     await mkdir(OUT, { recursive: true });
     for (const lang of ["he", "en"] as const) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, cutawayMotion, kenBurnsTransform, parallaxFill, revealedCount, badgeClearance, springValue, diagramFontScale, drawProgress, speakerTransform, splitTransform, visiblePages, wordPulse } from "./motion";
+import { calloutScale, progressShare, activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, cutawayMotion, kenBurnsTransform, parallaxFill, revealedCount, badgeClearance, springValue, diagramFontScale, drawProgress, speakerTransform, splitTransform, visiblePages, wordPulse } from "./motion";
 import { houseStyle } from "../house-style";
 
 describe("speakerTransform", () => {
@@ -188,5 +188,22 @@ describe("compare badge clearance", () => {
     const reach = iconSize / 2 + badgeRing - tileGap / 2;
     expect(badgeClearance(iconSize, badgeRing, tileGap, badgeClear)).toBe(reach + badgeClear);
     expect(badgeClear).toBeGreaterThan(0);
+  });
+});
+
+describe("callouts and the progress bar", () => {
+  const spring = { stiffness: 220, damping: 14 };
+  it("springs the badge in with an overshoot and shrinks it away over the last 5 frames", () => {
+    expect(calloutScale(0, 48, spring, 5)).toBeGreaterThan(0);
+    expect(calloutScale(0, 48, spring, 5)).toBeLessThan(0.5);
+    expect(Math.max(...Array.from({ length: 20 }, (_, f) => calloutScale(f, 48, spring, 5)))).toBeGreaterThan(1.05);
+    expect(calloutScale(30, 48, spring, 5)).toBeCloseTo(1, 2);
+    expect(calloutScale(46, 48, spring, 5)).toBeLessThan(0.7);
+    expect(calloutScale(47, 48, spring, 5)).toBe(0);
+  });
+  it("fills the progress bar frame by frame to 100 % on the last frame", () => {
+    expect(progressShare(0, 300)).toBeCloseTo(1 / 300, 6);
+    expect(progressShare(149, 300)).toBe(0.5);
+    expect(progressShare(299, 300)).toBe(1);
   });
 });

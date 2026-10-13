@@ -2,7 +2,7 @@ import type { CaptionPage, Timeline, TimelineClip } from "@reel/core";
 
 /**
  * A 7 s footage timeline: headline 0–60 (pills hidden), three pill pages with word start frames, a low pill (62 %),
- * a flash break at 100 and a CTA card from 135. Graphic clips unless videoSrc is given.
+ * a flash break at 100, a callout over frames 62-93, the progress bar and a CTA card from 135. Graphic clips unless videoSrc is given.
  */
 export function sampleFootageTimeline(lang: "he" | "en", videoSrc?: string): Timeline {
   const he = lang === "he";
@@ -34,6 +34,8 @@ export function sampleFootageTimeline(lang: "he" | "en", videoSrc?: string): Tim
     overlays: [],
     hook: { patternBreak: "flash", headline: { small: he ? "הטריק ש" : "The trick that", big: he ? "חוסך שעות" : "saves hours", fromFrame: 0, durationInFrames: 60 } },
     patternBreaks: [{ frame: 100, kind: "flash" }],
+    callouts: [{ text: "1/3", fromFrame: 62, durationInFrames: 32, topPct: 22, align: "center" }],
+    progressBar: true,
     ending: { kind: "cta", keyword: "AI", fromFrame: 135, durationInFrames: 75 },
   };
 }
