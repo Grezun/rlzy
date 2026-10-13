@@ -18,8 +18,8 @@ type JobLike = { type: string; status: string; progress: unknown; error: string 
 type StepKey = keyof ReturnType<typeof emptyProgress>["steps"];
 const STEPS: Record<string, [StepKey, string][]> = {
   generate: [["voice", "Voice"], ["visuals", "Visuals"], ["render", "Render"], ["export", "Export"]],
-  ingest_footage: [["conform", "Prepare video"], ["faces", "Find face"], ["transcribe", "Transcribe"], ["plan", "Plan the edit"]],
-  generate_footage: [["voice", "Cut audio"], ["music", "Music"], ["visuals", "Cutaways"], ["render", "Render"], ["export", "Export"]],
+  ingest_footage: [["conform", "Prepare video"], ["faces", "Find face"], ["transcribe", "Transcribe"], ["cutout", "Cut you out"], ["plan", "Plan the edit"]],
+  generate_footage: [["voice", "Cut audio"], ["music", "Music"], ["background", "Background"], ["visuals", "Cutaways"], ["render", "Render"], ["export", "Export"]],
 };
 
 const PLAN_HEADLINES: Record<string, [string, ProgressView["tone"]]> = {
@@ -40,7 +40,7 @@ const HEADLINES: Record<string, Record<string, [string, ProgressView["tone"]]>> 
   generate: GENERATE_HEADLINES,
   ingest_footage: {
     queued: ["Waiting for a worker…", "info"],
-    running: ["Preparing your video: transcribing and planning the edit…", "info"],
+    running: ["Preparing your video: transcribing, cutting you out and planning the edit…", "info"],
     done: ["Edit plan ready: review and approve it below.", "success"],
     failed: ["Preparing the video failed.", "error"],
   },
