@@ -72,7 +72,7 @@ The edit plan is what the user reviews. It is stored in the existing `storyboard
 EditPlan {
   format: "footage"
   version, title, language: "he" | "en", targetDurationSec: 15 | 30 | 45 | 60 | 90   // 90 is footage-only: raw talks run longer
-  source: { assetId, durationMs, transcriptAssetId, faceTrackAssetId }
+  source: { assetId, durationMs, transcriptAssetId, faceTrackAssetId, extras: FootageExtra[] }   // extras: plan 2, the conformed extra uploads
   beats: Beat[]                                // in source order; code splits them, Claude annotates
   hook: {
     coldOpenBeatId?: string                    // beat played first, then the reel continues from the start
@@ -86,6 +86,7 @@ EditPlan {
   music: { kind: "library"; assetId: string } | { kind: "ai"; prompt: string } | { kind: "none" }
   sfx: "off" | "subtle" | "lively"
   estimate: { durationSec: number; credits: number }   // computed by code, not Claude
+  character?: { id: string; name: string }     // plan 2: the Soul ID character for ai_self cutaways (a soul_characters row)
 }
 
 Beat {
@@ -95,8 +96,9 @@ Beat {
   emphasisWordIdx?: number                     // caption word shown in red
   emoji?: "👆" | "👇" | string                 // optional, at line end
   cutaway?: {                                  // plan 2
-    source: { kind: "ai_broll"; prompt: string } | { kind: "ai_self"; prompt: string } | { kind: "upload"; assetId: string }
-          | { kind: "diagram"; template: "compare" | "list" | "flow"; items: string[] }
+    source: { kind: "ai_broll"; prompt: string; media: "image" | "video" } | { kind: "ai_self"; prompt: string; media: "image" | "video" }
+          | { kind: "upload"; assetId: string }   // one of source.extras
+          | { kind: "diagram"; template: "compare" | "list" | "flow"; items: string[] }   // compare 2, list 2–4, flow 2–3; items ≤ 40 chars
     layout: "full" | "split"
     atMs: number; durationMs: number           // within the beat; 1000–3000 ms
   }
@@ -126,7 +128,8 @@ Edits save as a new version. A **Re-plan** button reruns `plan_footage` with an 
   - optional CTA keyword
   - optional notes to the agent
   - the video file
-  - optional extra files (plan 2)
+  - optional extra files (plan 2): at most 6; photos JPG/JPEG/PNG/WEBP ≤ 25 MB (HEIC is refused with a "convert to JPG" hint), clips MP4/MOV ≤ 500 MB, stored at `footage/<projectId>/extra-<n>.<ext>` by the same resumable upload. Ingest re-encodes photos upright (EXIF orientation applied) and fits clips inside 1080×1920 (no crop, no audio, first 10 s).
+  - optional Soul ID character (plan 2), picked from the team's `soul_characters`
 - **Upload path:**
   - The browser uploads directly to Supabase Storage with resumable uploads (TUS) into the `assets` bucket, at `footage/<projectId>/source.<ext>`.
   - The Next.js server only signs and records the upload.
@@ -154,12 +157,13 @@ Edits save as a new version. A **Re-plan** button reruns `plan_footage` with an 
 ### 4.3 Plan job (`plan_footage`)
 - **Beat splitting (code).** Beats are split at sentence-ending punctuation and at pauses of 600 ms or more. A beat over 10 s is split at its longest internal pause. A beat under 1.2 s merges with its neighbour.
 - **Claude's input:** the beats with their text and word indices, the target length, the user's notes and CTA keyword, the house-style rules, and the cutaway budget.
+- **Cutaway budget (plan 2), per target length T seconds:** at most `round(T/5)` cutaways, `floor(T/15)` of them video; `ai_self` only with a character, at most `max(1, floor(T/20))`. Code enforces it after Claude (drops extras in beat order, turns surplus clips into stills) and adds warnings.
 - **Claude's output:** the draft edit plan, then code validates it as in §3.
 - **Language check:** a mismatch between the selected and detected language adds a warning to the plan. It does not fail the job.
 
 ### 4.4 Generate job (`generate_footage`, after approval)
 1. **Assets, all reused and cached by input hash:**
-   - B-roll and `ai_self` shots: Higgsfield, using the existing submit/wait/resume. `ai_self` uses the team's Soul ID character.
+   - B-roll and `ai_self` shots: Higgsfield, using the existing submit/wait/resume. Each is a still (`media: "image"`) or a still animated into a short clip (`media: "video"`). `ai_self` uses the plan's Soul ID character: it is trained once outside the app and its reference id is saved on a Characters settings page (table `soul_characters`). A shot whose character no longer exists is skipped with a note.
    - AI background images: Higgsfield image model.
    - AI music: ElevenLabs Music, length fitted to the reel.
    - Library music: downloaded from the team library.
@@ -187,20 +191,26 @@ Edits save as a new version. A **Re-plan** button reruns `plan_footage` with an 
    - Each cutaway is placed at `beat start + atMs` for `durationMs`, clipped to the beat.
    - `full`: replaces the speaker picture; the speaker's audio continues.
    - `split`: the cutaway fills the top half. The speaker is cropped 9:8 around the face into the bottom half, with the seam at y = 0.50 (ref).
-5. **Hard rules**, applied after compiling:
+5. **Hard rules**, applied in reel order:
    - Cutaways never overlap.
-   - At least 40% of the reel shows the speaker.
-   - Any cutaway that breaks a rule is trimmed. If trimming isn't enough, it is dropped and a warning is added.
+   - Cutaways never run under the CTA card.
+   - An upload clip's cutaway is no longer than the clip.
+   - At least 40% of the reel shows the speaker (split counts as speaker).
+   - Any cutaway that breaks a rule is trimmed. If it ends up under 1 s, it is dropped. Every trim or drop adds a warning, shown on the review page and as a generation note.
 6. **Captions.**
    - Pages of about 3 words and at most 22 characters, breaking at punctuation first. Each page shows from its first word's start to the next page's start.
    - The `emphasisWordIdx` word is rendered red, and the emoji goes at the end of its page's line.
    - Times are remapped from source time to reel time, so captions stay in sync after cuts.
+   - **Placement (tuned in plan 2 after the first real reel):** each page sits below the face: on-screen chin + 3% + 2.8% (half the pill), clamped to 55–72% of the height, constant within a page, kept from the previous page when it would move less than 3%. A page with no face keeps the previous position (60% when the reel has no face at all). Pages over a split cutaway sit on the seam (50%).
+   - Pills are hidden while the hook headline or the CTA card is on screen; a page left with fewer than 8 visible frames is dropped (the SRT keeps every page).
 7. **Hook.**
    - The headline shows over 0–2 s, word by word.
    - The pattern break happens at frame 0:
      - `zoom_hit`: 1.0× → 1.3× over 6 frames
      - `flash`: 2 white frames
      - `broll`: the first cutaway is pulled to 0 s, full screen, 1 s long
+   - **Recurring breaks (plan 2, after the first real reel read as static):** after the hook, a break about every 10 s (window 8–12 s, counted again from each cutaway) at a cut, never under the CTA card or a cutaway. Kinds cycle `zoom_blur`, `zoom_hit`, `zoom_blur`, `flash`, each with a whoosh. `zoom_blur`: the clip enters at 1.22× with a 16 px blur, settling over 6 frames. `zoom_hit` here punches 1.2× over the shot's zoom.
+   - Cuts to a larger zoom step snap in from 1.06× over 4 frames.
 8. **Ending.**
    - `cta`: a 2.5 s card over the last shot.
    - `loop`: the last shot is trimmed to end on a word boundary. The first shot starts without the hook flash, so the replay flows on.
@@ -221,14 +231,14 @@ All values sit in one `houseStyle` config in `@reel/video`. Tuning the look mean
 
 | Component | Spec |
 |---|---|
-| `PillCaptions` (caption preset `pill`, default for footage) | Black Heebo 800 text in a white rounded pill. Placed at y = 45% of height (ref: 43–50%). Max 22 chars per line. Red emphasis `#E5262A`. Each page pops in from 90% to 100% scale over 4 frames. Rendered above every other layer, so it survives cuts. |
+| `PillCaptions` (caption preset `pill`, default for footage) | Black Heebo 800 text in a white rounded pill. Placed per page below the face (§5.6; 45% when a page has no position, ref 43–50%). Max 22 chars per line. Red emphasis `#E5262A`. Each page pops in from 80% to 100% with a slight overshoot over 6 frames. The spoken word pops 1.12 → 1 over 3 frames on a `#FEE80A` marker (an addition: the references have no active-word highlight). The emoji pops 0 → 1.35 → 1 over 8 frames when the page's last word is spoken. Rendered above the clips and cutaways so it survives cuts, but hidden under the hook headline and the CTA card (§5.6). |
 | `SpeakerShot` | Working copy (or speaker plate) segment with a face-centred zoom and the optional push-in. |
 | `SplitLayout` | Cutaway in the top half; speaker cropped 9:8 in the bottom half; captions on the seam. |
 | `Cutaway` | Video or still. Stills get a gentle Ken Burns zoom (+6%). Hard cut in and out. |
 | `HookHeadline` | Small white line, then a huge yellow (`#FEE80A`, ref) word or words, popping in word by word. Heavy weight with a soft shadow. |
-| `PatternBreak` | `zoom_hit`, `flash` or `broll`, as described in §5.7. |
+| `PatternBreak` | `zoom_hit`, `flash` or `broll` at frame 0, plus the recurring breaks, as described in §5.7. Zoom hits and zoom blurs live on the speaker clips; this layer draws the flashes. |
 | `CtaCard` | "תכתבו '<KEYWORD>' בתגובות" ("write '<KEYWORD>' in the comments") with a huge quoted keyword. English: "Comment '<KEYWORD>'". |
-| `DiagramCard` (plan 2) | White line art on near-black or violet. Templates: `compare` (2 boxes), `list` (up to 4 items), `flow` (A → B → C). Icons from Lucide. |
+| `DiagramCard` (plan 2) | White line art on near-black or violet. Templates: `compare` (2 boxes), `list` (up to 4 items), `flow` (2–3 steps stacked top to bottom with down arrows, so 40-character Hebrew steps fit the width). Icons from Lucide. |
 
 English reels use the same components. RTL and LTR handling follows the existing captions code.
 
@@ -252,7 +262,7 @@ English reels use the same components. RTL and LTR handling follows the existing
 | Plan breaks schema | One repair round, then a failed plan with the reason, as today. |
 | Plan breaks compiler rules | Auto-trim or drop, with warnings shown in review. |
 | Kept beats over target length | Warning with the actual length. Nothing is dropped silently. |
-| B-roll, AI self, AI background or AI music fails twice | That element is skipped (speaker stays on screen, real background, no music). The result page lists what was skipped and offers to retry just that element. |
+| B-roll, AI self, AI background or AI music fails | One attempt per element, never resubmitted inside the job (no repeat paid calls; the gateway's own submit retries cover transient errors before a job exists). The element is skipped (speaker stays on screen, real background, no music) and the result page lists what was skipped. To retry, the user uses "Edit as new version" and approves again; finished elements come from the cache. A per-element retry button is deferred (not in plans 1–2). |
 | Spend | Capped at the approved estimate. A generation that would exceed it is skipped, with a note. |
 | Segmentation fails | The render uses the real background and says so. |
 | Worker crash | Existing heartbeat and requeue (3 attempts). Each step's outputs are cached assets, so a restart skips finished work. |
@@ -266,6 +276,7 @@ English reels use the same components. RTL and LTR handling follows the existing
   - `jobs_type_check` gains `ingest_footage`, `plan_footage` and `generate_footage`.
   - `assets_kind_check` gains `data`, for the transcript and face-track JSON.
   - New `team_music` table: id, storage path, title, mood, duration, created_by.
+- Plan 2: the footage storage policies also allow `footage/<projectId>/extra-[1-6].<ext>`; new `soul_characters` table (id, name 1–40, unique `reference_id`, created_by), readable by the team, insert-only for members.
 - Plan 3: new `brand_backdrops` table.
 
 **Packages:**

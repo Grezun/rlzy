@@ -19,14 +19,15 @@
 
 - **Scope:** plan 2. `background.mode: "replace"` stays rejected by `parseEditPlan` with the plan-1 message `Background replacement arrives in a later update: keep the original background.` (plan 3). The cutaway and `patternBreak: "broll"` rejections are removed.
 - **Cutaways (spec §3):** one per beat; `atMs` ≥ 0 measured from the beat's first reel frame (after cuts); `durationMs` 1000–3000; `layout` `full` (replaces the picture, the speaker's audio continues) or `split` (cutaway in the top half, speaker cropped 9:8 around the face in the bottom half, seam at y = 0.50 (ref), captions on the seam). Sources: `ai_broll` and `ai_self` (each `media: "image" | "video"`), `upload` (an extra file of this video), `diagram` (`compare` exactly 2 items, `list` 2–4, `flow` 2–3; items ≤ 40 characters).
-- **Hard rules (spec §5.5), applied in reel order:** clipped to its beat; never overlaps the previous cutaway; never under the CTA card; full cutaways together cover at most 60 % of the reel (≥ 40 % shows the speaker; split counts as speaker). A cutaway shortened below 1000 ms is dropped. Every trim or drop adds a warning shown on the review page and as a generation note.
+- **Hard rules (spec §5.5), applied in reel order:** clipped to its beat; never overlaps the previous cutaway; never under the CTA card; full cutaways together cover at most 60 % of the reel (≥ 40 % shows the speaker; split counts as speaker). A cutaway shortened below 1000 ms is dropped. Every trim or drop adds a warning shown on the review page (`placementWarnings`) and as a generation note (`generateFootageAssets` adds `planCutaways(...).warnings` to its notes).
+- **CTA card start:** one rule, `ctaStartFrame(plan, total, style)` in `footage/shots.ts` (Task 1), used by pattern breaks, cutaway placement, the estimate and `compileFootage`. Nothing re-derives it inline.
 - **`broll` pattern break (spec §5.7):** the first cutaway in reel order moves to frame 0, full screen, 1000 ms long.
 - **Cutaway budget (spec §4.3), per reel target T seconds:** at most `round(T/5)` cutaways, `floor(T/15)` of them video, and `ai_self` only with a character, at most `max(1, floor(T/20))`. Code enforces it after Claude (drops extras in beat order, turns surplus videos into stills) and warns.
 - **Money:** prices from `DEFAULT_COST_TABLE`: AI still `higgsfield-ai/soul/v2/standard` $0.04; AI clip = still + `bytedance/seedance-2.5/image-to-video` billed `videoBillSeconds(sec)` (minimum 4 s) × $0.08 = $0.36; uploads and diagrams free. `ai_self` uses the same Soul model with the character's reference, priced the same (checked in the paid smoke test). The estimate = AI music + placed cutaways, rounded up to the cent. Generation reserves each paid element against the approved estimate before paying; one that doesn't fit is skipped with a note. Cached elements cost nothing. Nothing is generated before approval.
 - **No repeat paid calls:** a failed Higgsfield generation is not resubmitted inside the job (the gateway's own submit retries cover transient errors before a job exists); the element is skipped with a note. "Edit as new version" + approve retries it, and finished elements come from the cache.
 - **Cache keys include the provider model id:** stills `hashes.image(model, prompt)`; Soul ID stills `footageHashes.selfImage(model, prompt, referenceId, strength)`; clips `hashes.video(model, resolution, prompt, imageHash, billSec)`; fitted clips `footageHashes.cutawayFit(rawHash, durationMs)`; extras `footageHashes.extra(sha, kind)`. Fake providers report `fake/...` model ids.
 - **Soul ID:** the character is trained once outside the app with the existing `higgsfield-soul-id` flow (paid, controller only, user's OK first). Its reference id is stored in the new `soul_characters` table and sent as `custom_reference_id` with `custom_reference_strength: 1` (the field names `@higgsfield/client` uses for Soul).
-- **Extra uploads:** at most 6 files; photos JPG/JPEG/PNG/WEBP ≤ 25 MB, clips MP4/MOV ≤ 500 MB; stored at `footage/<projectId>/extra-<n>.<ext>` (n = 1–6) by the same TUS upload; clips are conformed to fit inside 1080×1920 (no crop, no audio, first 10 s only); photos are stored unchanged (Chrome applies EXIF rotation when rendering).
+- **Extra uploads:** at most 6 files; photos JPG/JPEG/PNG/WEBP ≤ 25 MB, clips MP4/MOV ≤ 500 MB; stored at `footage/<projectId>/extra-<n>.<ext>` (n = 1–6) by the same TUS upload; clips are conformed to fit inside 1080×1920 (no crop, no audio, first 10 s only); photos are re-encoded upright with `conformPhoto` (ffmpeg applies the EXIF orientation, which `probe` ignores: a phone JPEG with orientation 6 probes as landscape), JPG/JPEG to `.jpg`, PNG/WEBP to `.png`, so the stored width and height are what the reel shows.
 - **Look (houseStyle) — Task 1 numbers:** pill captions hidden while the hook headline or the CTA card is on screen (pages that would show < 8 frames are dropped); pill centre = on-screen chin + 3 % + 2.8 %, clamped to 55–72 % of the height, rounded to 0.5 %, constant within a page, kept from the previous page when it moves < 3 %; no face → previous page's position (60 % when the reel has no face at all); split pages at 50 %. Pattern breaks recur every 10 s (window 8–12 s) at cuts, cycling `zoom_blur, zoom_hit, zoom_blur, flash`, each with a whoosh; punch-in cuts snap 1.06 → 1 over 4 frames; zoom-blur entries 1.22 → 1 with 16 px → 0 blur over 6 frames; the active caption word pops 1.12 → 1 over 3 frames on a `#FEE80A` marker; pages pop 80 % → 100 % with a slight overshoot over 6 frames; emoji pop 0 → 1.35 → 1 over 8 frames when the page's last word is spoken.
 - **Existing formats** (faceless, Custom, styles, voice SRT) render byte for byte as before: all `Timeline` additions are optional and only footage timelines set them. Plan-1 edit plans still parse (`source.extras` defaults to `[]`).
 - **Migration:** `supabase/migrations/20261013120000_footage_cutaways.sql` (Task 2), applied to the hosted project only by the controller after the user approves. Tasks hand-edit `packages/db/src/database.types.ts`.
@@ -52,12 +53,12 @@
 | Area | Files |
 |---|---|
 | DB | `supabase/migrations/20261013120000_footage_cutaways.sql`, `packages/db/src/database.types.ts`, `packages/db/src/index.ts` |
-| Core | `footage-form.ts`, `schema/footage.ts`, `schema/edit-plan.ts`, `schema/timeline.ts`, `footage/style.ts`, `footage/caption-place.ts` (new), `footage/breaks.ts` (new), `footage/cutaways.ts` (new), `footage/compile.ts`, `cost.ts`, `timeline-sources.ts`, `testing/fixtures.ts`, `index.ts` |
+| Core | `footage-form.ts`, `schema/footage.ts`, `schema/edit-plan.ts`, `schema/timeline.ts`, `footage/style.ts`, `footage/shots.ts`, `footage/caption-place.ts` (new), `footage/breaks.ts` (new), `footage/cutaways.ts` (new), `footage/compile.ts`, `cost.ts`, `timeline-sources.ts`, `testing/fixtures.ts`, `index.ts` |
 | Video | `house-style.ts`, `footage/motion.ts`, `footage/PillCaptions.tsx`, `footage/PatternBreak.tsx`, `footage/SpeakerShot.tsx`, `footage/Cutaways.tsx` (new), `footage/DiagramCard.tsx` (new), `footage/icons.tsx` (new), `Reel.tsx`, `sample-footage.ts`, `footage-render.test.ts` |
-| Media | `ops.ts` (`conformClip`) |
-| Engine | `providers/types.ts`, `providers/higgsfield.ts`, `providers/fake.ts`, `footage-ingest.ts`, `footage-cutaways.ts` (new), `footage-generate.ts`, `footage-planner.ts`, `index.ts` |
+| Media | `ops.ts` (`conformClip`, `conformPhoto`), `testing.ts` (`addExifOrientation`) |
+| Engine | `providers/types.ts`, `providers/higgsfield.ts`, `providers/fake.ts`, `footage-ingest.ts`, `footage-cutaways.ts` (new), `footage-generate.ts`, `footage-planner.ts`, `index.ts`, `footage-render.test.ts` |
 | Worker | `handlers/footage.ts`, `handlers/generate-footage.ts`, `handlers/index.ts`, `reel-db.ts`, `testing/fakes.ts`, `main.ts` |
-| Web | `lib/create-footage.ts`, `lib/footage-form.ts`, `lib/footage-send.ts`, `lib/character-form.ts` (new), `lib/edit-plan-edit.ts`, `lib/approve-plan.ts`, `app/new/footage/*`, `app/settings/characters/*` (new), `app/projects/[id]/*`, `components/FootagePlanEditor.tsx`, `components/CutawayEditor.tsx` (new), `app/layout.tsx` |
+| Web | `lib/create-footage.ts`, `lib/footage-form.ts`, `lib/footage-send.ts`, `lib/character-form.ts` (new), `lib/cutaway-edit.ts` (new), `lib/edit-plan-edit.ts`, `lib/approve-plan.ts`, `lib/progress-view.ts`, `app/new/footage/*`, `app/settings/characters/*` (new), `app/projects/[id]/footage-actions.ts`, `app/projects/[id]/page.tsx`, `components/FootagePlanEditor.tsx`, `components/CutawayEditor.tsx` (new), `app/layout.tsx` |
 | Docs | `docs/RUNNING.md` |
 
 ---
@@ -76,14 +77,14 @@ The reference report measured no active-word highlight and almost no transitions
 
 **Files:**
 - Create: `packages/core/src/footage/caption-place.ts`, `packages/core/src/footage/breaks.ts`
-- Modify: `packages/core/src/footage/style.ts`, `packages/core/src/schema/timeline.ts`, `packages/core/src/footage/compile.ts`, `packages/core/src/testing/fixtures.ts`, `packages/core/src/index.ts`, `packages/video/src/house-style.ts`, `packages/video/src/footage/motion.ts`, `packages/video/src/footage/PillCaptions.tsx`, `packages/video/src/footage/PatternBreak.tsx`, `packages/video/src/footage/SpeakerShot.tsx`, `packages/video/src/sample-footage.ts`, `packages/engine/src/footage-planner.ts`
-- Test: `packages/core/src/footage/caption-place.test.ts` (new), `packages/core/src/footage/breaks.test.ts` (new), `packages/core/src/footage/compile.test.ts`, `packages/video/src/footage/motion.test.ts`, `packages/video/src/house-style.test.ts`, `packages/video/src/footage-render.test.ts`
+- Modify: `packages/core/src/footage/style.ts`, `packages/core/src/footage/shots.ts`, `packages/core/src/schema/timeline.ts`, `packages/core/src/footage/compile.ts`, `packages/core/src/testing/fixtures.ts`, `packages/core/src/index.ts`, `packages/video/src/house-style.ts`, `packages/video/src/footage/motion.ts`, `packages/video/src/footage/PillCaptions.tsx`, `packages/video/src/footage/PatternBreak.tsx`, `packages/video/src/footage/SpeakerShot.tsx`, `packages/video/src/sample-footage.ts`, `packages/engine/src/footage-planner.ts`
+- Test: `packages/core/src/footage/caption-place.test.ts` (new), `packages/core/src/footage/breaks.test.ts` (new), `packages/core/src/footage/compile.test.ts`, `packages/video/src/footage/motion.test.ts`, `packages/video/src/house-style.test.ts`, `packages/video/src/footage-render.test.ts`, `packages/engine/src/footage-render.test.ts`
 
 **Interfaces:**
 - Produces (core):
   - `EditStyle` gains `captionPlacement: { minTopPct; maxTopPct; chinGapPct; pillHalfPct; holdPct; noFaceTopPct; seamTopPct }`, `breaks: { everyMs; minMs; maxMs; minShotFrames; kinds: BreakKind[]; hitFactor; zoomBlurFrames }`, `snapFrames: number`.
   - `type FaceSpan = { fromFrame: number; endFrame: number; chinY: number | null; split?: boolean }`; `screenChinY(face: FaceBox | null, crop: TimelineCrop): number | null`; `placeCaptionPages(pages: { fromFrame: number; durationInFrames: number }[], spans: FaceSpan[], p: EditStyle["captionPlacement"]): number[]`.
-  - `type BreakKind = "zoom_hit" | "flash" | "zoom_blur"`; `type PickedBreak = { index: number; frame: number; kind: BreakKind }`; `pickBreaks(shots: { fromFrame: number; frames: number }[], b: EditStyle["breaks"], blocked: [number, number][], resets: number[]): PickedBreak[]`; `applyBreaks(clips: TimelineClip[], picked: PickedBreak[], faces: (FaceBox | null)[], style: EditStyle): { frame: number; kind: BreakKind }[]` (mutates clips); `addSnaps(clips: TimelineClip[], style: EditStyle): void`.
+  - `BreakKindSchema = z.enum(["zoom_hit", "flash", "zoom_blur"])` and `type BreakKind` in `schema/timeline.ts` (the one definition: `EditStyle.breaks.kinds` and `Timeline.patternBreaks` both use it); `ctaStartFrame(plan: Pick<EditPlan, "ending">, total: number, style: EditStyle): number` in `footage/shots.ts` (first frame of the CTA card, `total` without a CTA); `type PickedBreak = { index: number; frame: number; kind: BreakKind }`; `pickBreaks(shots: { fromFrame: number; frames: number }[], b: EditStyle["breaks"], blocked: [number, number][], resets: number[]): PickedBreak[]`; `applyBreaks(clips: TimelineClip[], picked: PickedBreak[], faces: (FaceBox | null)[], style: EditStyle): { frame: number; kind: BreakKind }[]` (mutates clips); `addSnaps(clips: TimelineClip[], style: EditStyle): void`.
   - Timeline: `CaptionPage.topPct?: number`, `CaptionPage.words[].startFrame?: number` (absolute reel frame), `TimelineClip.enter?: { kind: "snap" | "zoom_blur"; frames: number }`, `Timeline.patternBreaks?: { frame: number; kind: BreakKind }[]`.
   - Fixtures: `testEditStyle()` gains the three fields; `lowFaceTrackFixture(): FaceTrack` (face at y 0.5–0.7).
 - Produces (video): `houseStyle.captions` gains `minVisibleFrames`, `activeWord`, `emoji`; `houseStyle.motion = { snapScale, zoomBlurScale, zoomBlurPx }`; `footage/motion.ts` gains `popBounce`, `enterEffect`, `visiblePages`, `captionHideRanges`, `activeWordIndex`, `wordPop`, `emojiScale`, and `speakerTransform(crop, frame, durationInFrames, mult = 1)`.
@@ -108,14 +109,14 @@ The reference report measured no active-word highlight and almost no transitions
     minMs: z.number().positive(),
     maxMs: z.number().positive(),
     minShotFrames: z.number().int().positive(),
-    kinds: z.array(z.enum(["zoom_hit", "flash", "zoom_blur"])).min(1),
+    kinds: z.array(BreakKindSchema).min(1),
     hitFactor: z.number().min(1).max(2),
     zoomBlurFrames: z.number().int().positive(),
   }),
   /** Punch-in cuts (to a larger zoom step) enter with a short scale snap. */
   snapFrames: z.number().int().positive(),
 ```
-In `packages/video/src/house-style.ts` add to `edit` (after `noisyLogprob`), with the reasons as comments:
+(import `BreakKindSchema` from `../schema/timeline`; step 2 adds it, and `schema/timeline.ts` imports nothing from `footage/`, so there is no cycle). In `packages/video/src/house-style.ts` add to `edit` (after `noisyLogprob`), with the reasons as comments:
 ```ts
     // Pill ≈ 66 px × 1.25 + 2 × 10 px padding ≈ 103 px = 5.4 % of 1920 → half 2.8 %. 3 % (≈ 58 px) clears chin and beard.
     // 55 %: always below mid-frame, so the pill never crosses a face in the upper half. 72 %: the pill's bottom
@@ -141,9 +142,15 @@ export const lowFaceTrackFixture = (): FaceTrack => ({
 ```
 
 - [ ] **Step 2: Extend the timeline schema** in `packages/core/src/schema/timeline.ts`:
+  - add, above `CaptionPageSchema`:
+```ts
+/** Recurring pattern-break kinds (plan 2 Task 1). The only definition: EditStyle and the timeline both use it. */
+export const BreakKindSchema = z.enum(["zoom_hit", "flash", "zoom_blur"]);
+export type BreakKind = z.infer<typeof BreakKindSchema>;
+```
   - `CaptionPageSchema`: `words: z.array(z.object({ text: z.string().min(1), emphasis: z.boolean(), startFrame: z.number().int().nonnegative().optional() })).min(1)` and add `topPct: z.number().min(0).max(100).optional(),` (absent: the component's default 45 %).
   - `TimelineClipSchema`: add `enter: z.object({ kind: z.enum(["snap", "zoom_blur"]), frames: z.number().int().positive() }).optional(),`.
-  - `TimelineSchema`: add after `sfx`: `patternBreaks: z.array(z.object({ frame: z.number().int().nonnegative(), kind: z.enum(["zoom_hit", "flash", "zoom_blur"]) })).optional(),`.
+  - `TimelineSchema`: add after `sfx`: `patternBreaks: z.array(z.object({ frame: z.number().int().nonnegative(), kind: BreakKindSchema })).optional(),`.
 
 - [ ] **Step 3: Write the failing placement test** `packages/core/src/footage/caption-place.test.ts`:
 ```ts
@@ -549,11 +556,10 @@ Run `npx vitest run packages/core/src/footage/breaks.test.ts`. Expected: FAIL.
 - [ ] **Step 12: Implement** `packages/core/src/footage/breaks.ts` (replace the placeholder):
 ```ts
 import type { FaceBox } from "../schema/footage";
-import type { TimelineClip } from "../schema/timeline";
+import type { BreakKind, TimelineClip } from "../schema/timeline";
 import { centerFor, maxScaleFor, msToFrames } from "./shots";
 import type { EditStyle } from "./style";
 
-export type BreakKind = "zoom_hit" | "flash" | "zoom_blur";
 export type PickedBreak = { index: number; frame: number; kind: BreakKind };
 
 const r4 = (v: number) => Math.round(v * 10_000) / 10_000;
@@ -627,19 +633,25 @@ export function addSnaps(clips: TimelineClip[], style: EditStyle): void {
 ```
 Run the break tests. Expected: PASS.
 
-- [ ] **Step 13: Wire breaks, snaps and their sound into `compileFootage`.** In `packages/core/src/footage/compile.ts` after the `shots.forEach` loop (before `lastShot`):
+- [ ] **Step 13: Wire breaks, snaps and their sound into `compileFootage`.** First add the CTA rule to `packages/core/src/footage/shots.ts` (after `framesToMs`):
 ```ts
-  const ctaFrames = Math.min(total, msToFrames(style.ctaMs));
-  const ctaStart = plan.ending.kind === "cta" ? total - ctaFrames : total;
+/** First frame of the CTA card (the reel's length when the ending isn't a CTA). The one rule: breaks, cutaway placement, the estimate and compileFootage all call it. */
+export function ctaStartFrame(plan: Pick<EditPlan, "ending">, total: number, style: EditStyle): number {
+  return plan.ending.kind === "cta" ? total - Math.min(total, msToFrames(style.ctaMs)) : total;
+}
+```
+(`EditPlan` and `EditStyle` are already imported there as types.) Then in `packages/core/src/footage/compile.ts` after the `shots.forEach` loop (before `lastShot`):
+```ts
+  const ctaStart = ctaStartFrame(plan, total, style);
   const picked = pickBreaks(clips.map((c) => ({ fromFrame: c.fromFrame, frames: c.durationInFrames })), style.breaks, [[ctaStart, total]], []);
   const patternBreaks = applyBreaks(clips, picked, faces, style);
   addSnaps(clips, style);
 ```
-(remove the later duplicate `const ctaFrames = …` line and reuse this one for `ending`). In the sound-effect block, right after the hook whoosh/pops and before the CTA pop:
+and build the CTA ending from the same rule: keep `const ctaFrames = Math.min(total, msToFrames(style.ctaMs));` (the card's length) and set the ending's `fromFrame: ctaStart` instead of `total - ctaFrames`. In the sound-effect block, right after the hook whoosh/pops and before the CTA pop:
 ```ts
     patternBreaks.forEach((b, i) => cues.push({ name: whooshes[(i + 1) % 2], frame: b.frame, volumeDb: style.sfxVolumeDb.whoosh }));
 ```
-In `TimelineSchema.parse({...})` add `...(patternBreaks.length ? { patternBreaks } : {}),`. Import `addSnaps, applyBreaks, pickBreaks` from `./breaks`.
+In `TimelineSchema.parse({...})` add `...(patternBreaks.length ? { patternBreaks } : {}),`. Import `addSnaps, applyBreaks, pickBreaks` from `./breaks` and `ctaStartFrame` from `./shots`.
 
 - [ ] **Step 14: Write the compile tests for motion.** Add to `compile.test.ts`:
 ```ts
@@ -670,10 +682,18 @@ describe("motion", () => {
     expect(timeline.clips.map((c) => c.enter?.kind)).toEqual([undefined, "snap", "zoom_blur", undefined, undefined, "snap"]);
     expect(timeline.sfx?.map((c) => `${c.name}@${c.frame}`)).toEqual(["whoosh2@299", "whoosh1@599"]);
   });
-  it("never breaks under the CTA card, and a short reel has no breaks", () => {
-    const cta = compileFootage(longPlan({ ending: { kind: "cta", keyword: "AI" } }), longTalk(), null, assets, style).timeline;
-    const ctaFrom = cta.ending!.kind === "cta" ? cta.ending.fromFrame : 0;
-    expect((cta.patternBreaks ?? []).every((b) => b.frame < ctaFrom)).toBe(true);
+  it("never breaks under the CTA card", () => {
+    // b6 split in two: the cut at word 58 (≈ frame 868) lands in the 8–12 s window after the break at 599 and inside the last 2.5 s.
+    const beats = [...longPlan().beats.slice(0, 5), { id: "b6", startWordIdx: 50, endWordIdx: 57, keep: true }, { id: "b7", startWordIdx: 58, endWordIdx: 59, keep: true }];
+    const open = compileFootage(longPlan({ beats }), longTalk(), null, assets, style).timeline;
+    const lateCut = open.clips.at(-1)!.fromFrame;
+    expect(open.patternBreaks!.map((b) => b.frame)).toEqual([299, 599, lateCut]);
+    const cta = compileFootage(longPlan({ beats, ending: { kind: "cta", keyword: "AI" } }), longTalk(), null, assets, style).timeline;
+    const ctaFrom = cta.ending!.kind === "cta" ? cta.ending.fromFrame : -1;
+    expect(lateCut).toBeGreaterThanOrEqual(ctaFrom);
+    expect(cta.patternBreaks!.map((b) => b.frame)).toEqual([299, 599]);
+  });
+  it("a short reel has no breaks", () => {
     expect(compile().timeline.patternBreaks).toBeUndefined();
   });
 });
@@ -760,7 +780,7 @@ export function sampleFootageTimeline(lang: "he" | "en", videoSrc?: string): Tim
   };
 }
 ```
-In `footage-render.test.ts` replace the `it.each` table with `[["headline-only", 20], ["pill-active-word", 70], ["pill-emphasis-emoji", 110], ["cta-card", 160]]`. Run `npx vitest run packages/video/src/footage-render.test.ts`, then open `packages/video/work/stills/footage-*-he.png` and check: no pill at frame 20; at 70 the word "אראה" sits on a yellow marker at 58 %; at 110 the red "טריק." and 👇 sit at 62 %; at 160 only the CTA card. Expected: PASS and the stills look as described.
+In `packages/video/src/footage-render.test.ts` replace the `it.each` table with `[["headline-only", 20], ["pill-active-word", 70], ["pill-emphasis-emoji", 110], ["cta-card", 160]]`. In `packages/engine/src/footage-render.test.ts` (which renders this sample over a real test video) make the test video 8 s: `makeTestVideo(join(dir, "speaker.mp4"), { durationSec: 8 })`, because the sample's second clip now plays source 2.8–7.3 s; run `npx vitest run packages/engine/src/footage-render.test.ts` too. Run `npx vitest run packages/video/src/footage-render.test.ts`, then open `packages/video/work/stills/footage-*-he.png` and check: no pill at frame 20; at 70 the word "אראה" sits on a yellow marker at 58 %; at 110 the red "טריק." and 👇 sit at 62 %; at 160 only the CTA card. Expected: PASS and the stills look as described.
 
 - [ ] **Step 18: Verify and commit 1b.** Run `npx vitest run packages && npm run typecheck`. Expected: PASS. Commit with message `feat(footage): pattern breaks every ~10 s (zoom blur, zoom hit, flash) with whooshes, punch-in snaps, more emoji` (plus the trailer).
 
@@ -775,12 +795,12 @@ In `footage-render.test.ts` replace the `it.each` table with `[["headline-only",
 **Interfaces:**
 - Produces (core):
   - `FootageSettingsSchema` gains `characterId?: string` (uuid, a `soul_characters.id`).
-  - `EXTRA_MAX_FILES = 6`, `EXTRA_IMAGE_MAX_BYTES = 25 MiB`, `EXTRA_VIDEO_MAX_BYTES = 500 MiB`, `type ExtraExt = "mp4" | "mov" | "jpg" | "jpeg" | "png" | "webp"`, `extraExt(fileName): ExtraExt | null`, `extraKind(ext): "image" | "video"`, `extraStoragePath(projectId, n, ext): string`, `EXTRA_PATH_RE`, `extraLabel(fileName): string`, `checkExtraFiles(files: { name: string; size: number }[]): string[]`, `ExtraUploadSchema = { storagePath, label }`, `type ExtraUpload`.
+  - `EXTRA_MAX_FILES = 6`, `EXTRA_IMAGE_MAX_BYTES = 25 MiB`, `EXTRA_VIDEO_MAX_BYTES = 500 MiB`, `type ExtraExt = "mp4" | "mov" | "jpg" | "jpeg" | "png" | "webp"`, `extraExt(fileName): ExtraExt | null`, `extraKind(ext): "image" | "video"`, `extraStoragePath(projectId, n, ext): string`, `EXTRA_PATH_RE`, `baseName(fileName, max, fallback): string` (the file name without its extension, trimmed, at most `max` characters, `fallback` when empty; shared with the web's `footageTitle`), `extraLabel(fileName): string` (= `baseName(fileName, 80, "Upload")`), `checkExtraFiles(files: { name: string; size: number }[]): string[]`, `ExtraUploadSchema = { storagePath, label }`, `type ExtraUpload`.
 - Produces (db): `IngestFootageJobPayloadSchema` gains `extras: ExtraUpload[]` (max 6, default `[]`); DB types gain table `soul_characters`.
 
 - [ ] **Step 1: Write the failing core test.** Add to `packages/core/src/footage-form.test.ts`:
 ```ts
-import { checkExtraFiles, EXTRA_PATH_RE, extraExt, extraKind, extraLabel, extraStoragePath, ExtraUploadSchema } from "./footage-form";
+import { baseName, checkExtraFiles, EXTRA_PATH_RE, extraExt, extraKind, extraLabel, extraStoragePath, ExtraUploadSchema } from "./footage-form";
 
 describe("extra uploads", () => {
   const id = "0b5f8f9e-5c1d-4a43-9d4e-2f1c3b4a5d6e";
@@ -805,6 +825,9 @@ describe("extra uploads", () => {
     expect(extraKind("png")).toBe("image");
     expect(extraLabel("my screen recording.mov")).toBe("my screen recording");
     expect(extraLabel(".png")).toBe("Upload");
+    expect(baseName(" a.b.mov ", 120, "My video")).toBe("a.b");
+    expect(baseName(`${"א".repeat(200)}.mp4`, 120, "My video")).toHaveLength(120);
+    expect(baseName(".mp4", 120, "My video")).toBe("My video");
   });
   it("validates an extra upload and the optional character", () => {
     expect(ExtraUploadSchema.parse({ storagePath: `footage/${id}/extra-1.png`, label: " screenshot " }).label).toBe("screenshot");
@@ -831,10 +854,12 @@ export function extraExt(fileName: string): ExtraExt | null {
 }
 export const extraKind = (ext: ExtraExt): "image" | "video" => (ext === "mp4" || ext === "mov" ? "video" : "image");
 export const extraStoragePath = (projectId: string, n: number, ext: ExtraExt) => `footage/${projectId}/extra-${n}.${ext}`;
-export function extraLabel(fileName: string): string {
+/** A file name without its extension, trimmed, at most `max` characters (code points); `fallback` when nothing is left. */
+export function baseName(fileName: string, max: number, fallback: string): string {
   const base = fileName.replace(/\.[^.]*$/, "").trim();
-  return base ? Array.from(base).slice(0, 80).join("") : "Upload";
+  return base ? Array.from(base).slice(0, max).join("") : fallback;
 }
+export const extraLabel = (fileName: string) => baseName(fileName, 80, "Upload");
 
 /** Browser and server checks for the optional extra photos and clips (used as cutaways). */
 export function checkExtraFiles(files: { name: string; size: number }[]): string[] {
@@ -963,8 +988,8 @@ revoke all on public.soul_characters from anon;
 ### Task 3: EditPlan cutaways, extras and character; plan-1 limits lifted
 
 **Files:**
-- Modify: `packages/core/src/schema/footage.ts`, `packages/core/src/schema/edit-plan.ts`, `packages/core/src/testing/fixtures.ts`
-- Test: `packages/core/src/schema/edit-plan.test.ts`
+- Modify: `packages/core/src/schema/footage.ts`, `packages/core/src/schema/edit-plan.ts`, `packages/core/src/testing/fixtures.ts`, `packages/engine/src/footage-ingest.ts` (`extras: []` on the returned source), `packages/engine/src/providers/fake.ts` (draft beats get `cutaway: NO_CUTAWAY`)
+- Test: `packages/core/src/schema/edit-plan.test.ts`, `packages/engine/src/footage-planner.test.ts` (draft-beat literals get `cutaway: NO_CUTAWAY`)
 
 **Interfaces:**
 - Consumes: Task 2's `ExtraUpload` labels (copied into `FootageExtra.label` at ingest).
@@ -973,7 +998,7 @@ revoke all on public.soul_characters from anon;
   - `DiagramTemplateSchema` (`compare | list | flow`), `CutawayMediaSchema` (`image | video`), `CutawaySourceSchema`, `CutawaySchema`, `type Cutaway`, `type CutawaySource`.
   - `EditPlan.character?: { id: string; name: string }`.
   - `NOT_YET = { background }`, `notYetIssues(plan): string[]` (replace `NOT_IN_PLAN_ONE` / `planOneIssues`).
-  - `EditPlanDraftSchema`: beats gain `cutaway: { kind: "none" | "ai_broll" | "ai_self" | "upload" | "diagram"; media: "image" | "video"; prompt; uploadId; template: "compare" | "list" | "flow"; items: string[]; layout: "full" | "split"; atMs; durationMs }`; `hook.patternBreak` allows `"broll"`. Export `NO_CUTAWAY` (the draft's empty cutaway).
+  - `EditPlanDraftSchema`: beats gain `cutaway: { kind: "none" | "ai_broll" | "ai_self" | "upload" | "diagram"; media: "image" | "video"; prompt; uploadId; template: "compare" | "list" | "flow"; items: string[]; layout: "full" | "split"; atMs; durationMs }`; `hook.patternBreak` allows `"broll"`. Export `type DraftCutaway` (the draft's flat cutaway) and `NO_CUTAWAY` (its empty value).
   - Fixtures: `EXTRA_IMG = "d".repeat(64)`, `EXTRA_VID = "e".repeat(64)`, `fixtureExtras(): FootageExtra[]`, `CHARACTER_ID`.
 
 - [ ] **Step 1: Fixtures.** Add to `packages/core/src/testing/fixtures.ts` (import `FootageExtra` type from `../schema/footage`):
@@ -1126,7 +1151,10 @@ export const NO_CUTAWAY: DraftCutaway = { kind: "none", media: "image", prompt: 
 ```
 In `EditPlanDraftSchema`: beats become `z.array(z.object({ id: z.string(), keep: z.boolean(), dropReason: z.string(), emphasisWordIdx: z.number(), emoji: z.string(), cutaway: DraftCutawaySchema }))` and `patternBreak: z.enum(["zoom_hit", "flash", "broll", "none"])`. Update the doc comment: "uploadId is the x1…x6 id from the prompt; code maps it to the asset".
 
-The existing engine fixtures that build drafts (`footage-planner.test.ts` `draft()`, `providers/fake.ts`) now need `cutaway: NO_CUTAWAY` on every draft beat: add it in both (Task 9 builds on this). In `packages/web` nothing builds drafts.
+Every draft-beat literal in the engine now needs `cutaway: NO_CUTAWAY` (import `NO_CUTAWAY` from `@reel/core`); add it to all four (Task 9 builds on this):
+  - `packages/engine/src/footage-planner.test.ts`: the `draft()` fixture's beats (line 13), the single filler beat in "refuses an edit that keeps only fillers" (line 100) and the `keepAll` beats in "asks once to shorten an over-long plan" (line 106);
+  - `packages/engine/src/providers/fake.ts`: the fake footage planner's draft beats (line 113).
+In `packages/web` nothing builds drafts.
 
 - [ ] **Step 6: Verify and commit.** Run `npx vitest run packages && npm run typecheck`. Expected: PASS. Commit with message `feat(core): edit plan cutaways (AI B-roll, AI shots of you, uploads, diagrams), extras and character; B-roll pattern break allowed`.
 
@@ -1139,12 +1167,12 @@ The existing engine fixtures that build drafts (`footage-planner.test.ts` `draft
 - Test: `packages/core/src/footage/cutaways.test.ts` (new), `packages/core/src/cost.test.ts`, `packages/core/src/footage/compile.test.ts`
 
 **Interfaces:**
-- Consumes: `CutawaySchema`, `Cutaway`, `CutawaySource` (Task 3); `planShots`, `msToFrames`, `framesToMs`, `PlannedShot` (plan 1).
+- Consumes: `CutawaySchema`, `Cutaway`, `CutawaySource` (Task 3); `ctaStartFrame` (Task 1, `footage/shots.ts`); `planShots`, `msToFrames`, `framesToMs`, `PlannedShot` (plan 1).
 - Produces:
   - `EditStyle.cutaways = { minMs: number; minSpeakerShare: number; brollBreakMs: number; kenBurns: number; contentFitRatio: number }`.
   - `type PlacedCutaway = { beatId: string; source: CutawaySource; layout: "full" | "split"; fromFrame: number; durationInFrames: number; pulled: boolean }`; `type CutawayPlacement = { placed: PlacedCutaway[]; warnings: string[] }`.
-  - `ctaStartFrame(plan, total, style): number`; `placeCutaways(plan, shots, style): CutawayPlacement`; `planCutaways(plan, words, style): CutawayPlacement`.
-  - `type CutawayBudget = { max: number; maxVideo: number; maxSelf: number }`; `cutawayBudget(targetSec, hasCharacter): CutawayBudget`; `applyCutawayBudget(beats, budget, targetSec): { beats; warnings }`.
+  - `placeCutaways(plan, shots, style): CutawayPlacement`; `planCutaways(plan, words, style): CutawayPlacement`.
+  - `type CutawayBudget = { max: number; maxVideo: number; maxSelf: number }`; `cutawayBudget(targetSec, hasCharacter): CutawayBudget`; `applyCutawayBudget(beats, budget, targetSec): { beats; warnings }` (with no character it also strips `ai_self` from dropped beats, so the schema's character check never fails on a beat nobody sees).
   - `cost.ts`: `unitPrice(table, model, key)` (was private `price`), `cutawayCost(source, durationMs, table?)`, `estimateFootageCost(plan, durationSec, table?, placed?: PlacedCutaway[])`.
 
 - [ ] **Step 1: Style.** Add to `EditStyleSchema`:
@@ -1236,10 +1264,12 @@ describe("cutaway budget", () => {
       { id: "b4", keep: false, cutaway: vid("ai_broll") },
       { id: "b5", keep: true, cutaway: { source: { kind: "diagram", template: "list", items: ["a", "b"] }, layout: "full", atMs: 0, durationMs: 1000 } as Cutaway },
       { id: "b6", keep: true, cutaway: vid("ai_broll") },
+      { id: "b7", keep: false, cutaway: vid("ai_self") },
     ];
     const r = applyCutawayBudget(beats, cutawayBudget(15, false), 15);
+    // b7 is dropped, but an AI shot of you without a character would still fail the schema: it is stripped too (no warning, it never shows).
     expect(r.beats.map((b) => b.cutaway && ("media" in b.cutaway.source ? `${b.cutaway.source.kind}:${b.cutaway.source.media}` : b.cutaway.source.kind))).toEqual(
-      ["ai_broll:video", "ai_broll:image", undefined, "ai_broll:video", "diagram", undefined],
+      ["ai_broll:video", "ai_broll:image", undefined, "ai_broll:video", "diagram", undefined, undefined],
     );
     expect(r.warnings).toEqual([
       "1 AI shots of you were removed (no character is picked).",
@@ -1255,18 +1285,13 @@ Run `npx vitest run packages/core/src/footage/cutaways.test.ts`. Expected: FAIL.
 ```ts
 import type { Cutaway, CutawaySource, EditPlan } from "../schema/edit-plan";
 import type { Word } from "../schema/timeline";
-import { framesToMs, msToFrames, planShots, type PlannedShot } from "./shots";
+import { ctaStartFrame, framesToMs, msToFrames, planShots, type PlannedShot } from "./shots";
 import type { EditStyle } from "./style";
 
 export type PlacedCutaway = { beatId: string; source: CutawaySource; layout: "full" | "split"; fromFrame: number; durationInFrames: number; pulled: boolean };
 export type CutawayPlacement = { placed: PlacedCutaway[]; warnings: string[] };
 
 const secs = (frames: number) => (framesToMs(frames) / 1000).toFixed(1);
-
-/** First frame of the CTA card (the reel's length when the ending isn't a CTA). Same rule as compileFootage. */
-export function ctaStartFrame(plan: Pick<EditPlan, "ending">, total: number, style: EditStyle): number {
-  return plan.ending.kind === "cta" ? total - Math.min(total, msToFrames(style.ctaMs)) : total;
-}
 
 /**
  * Spec §5.4–5.5, in reel order (the B-roll break's cutaway first): place at beat start + atMs, clip to the beat,
@@ -1340,7 +1365,11 @@ export function cutawayBudget(targetSec: number, hasCharacter: boolean): Cutaway
   return { max: Math.round(targetSec / 5), maxVideo: Math.floor(targetSec / 15), maxSelf: hasCharacter ? Math.max(1, Math.floor(targetSec / 20)) : 0 };
 }
 
-/** Counts kept beats only, in beat order: AI shots of you past maxSelf go first, then cutaways past max, then clips past maxVideo become stills. */
+/**
+ * Counts kept beats only, in beat order: AI shots of you past maxSelf go first, then cutaways past max, then clips past
+ * maxVideo become stills. Without a character (maxSelf 0) dropped beats lose their AI shots of you too, silently: the
+ * schema rejects ai_self on any beat when no character is picked.
+ */
 export function applyCutawayBudget<B extends { id: string; keep: boolean; cutaway?: Cutaway }>(beats: B[], budget: CutawayBudget, targetSec: number): { beats: B[]; warnings: string[] } {
   const strip = (b: B): B => {
     const { cutaway: _drop, ...rest } = b;
@@ -1354,7 +1383,8 @@ export function applyCutawayBudget<B extends { id: string; keep: boolean; cutawa
   let stilled = 0;
   const out = beats.map((b) => {
     const c = b.cutaway;
-    if (!c || !b.keep) return b;
+    if (!c) return b;
+    if (!b.keep) return c.source.kind === "ai_self" && budget.maxSelf === 0 ? strip(b) : b;
     if (c.source.kind === "ai_self" && ++self > budget.maxSelf) {
       selfRemoved++;
       return strip(b);
@@ -1404,7 +1434,7 @@ and to `compile.test.ts`'s `describe("estimate")`:
 ```
 Run `npx vitest run packages/core/src/cost.test.ts packages/core/src/footage/compile.test.ts`. Expected: FAIL.
 
-- [ ] **Step 5: Implement prices** in `packages/core/src/cost.ts`: rename `price` to exported `unitPrice` (update its two callers), import `DEFAULT_MODELS` from `./models` and types `CutawaySource` from `./schema/edit-plan` and `PlacedCutaway` from `./footage/cutaways` (type-only imports, no cycle at runtime), then:
+- [ ] **Step 5: Implement prices** in `packages/core/src/cost.ts`: rename `price` to exported `unitPrice` and update all four call sites (three in `estimateCost`, one in the old `estimateFootageCost`, which this step replaces), import `DEFAULT_MODELS` from `./models` and types `CutawaySource` from `./schema/edit-plan` and `PlacedCutaway` from `./footage/cutaways` (type-only imports, no cycle at runtime), then:
 ```ts
 /** One cutaway's generation price in USD (spec §4.4): AI stills on the Soul model, AI clips animate that still. */
 export function cutawayCost(source: CutawaySource, durationMs: number, table: CostTable = DEFAULT_COST_TABLE): number {
@@ -1436,10 +1466,10 @@ export function estimateFootageCost(plan: Pick<EditPlan, "music">, durationSec: 
 - Test: `packages/core/src/footage/compile.test.ts`, `packages/core/src/footage/cutaways.test.ts`, `packages/core/src/timeline-sources.test.ts`
 
 **Interfaces:**
-- Consumes: `placeCutaways`, `PlacedCutaway`, `ctaStartFrame` (Task 4); `pickBreaks`, `applyBreaks`, `addSnaps`, `placeCaptionPages` (Task 1); `FootageExtra` (Task 3).
+- Consumes: `placeCutaways`, `PlacedCutaway` (Task 4); `ctaStartFrame`, `pickBreaks`, `applyBreaks`, `addSnaps`, `placeCaptionPages` (Task 1); `FootageExtra` (Task 3).
 - Produces:
   - `TimelineCutawaySchema`, `type TimelineCutaway = { id: string; fromFrame: number; durationInFrames: number; layout: "full" | "split"; media: { kind: "image"; src: string; fit: "cover" | "contain_blur"; kenBurns: number } | { kind: "video"; src: string; fit: "cover" | "contain_blur" } | { kind: "diagram"; template: "compare" | "list" | "flow"; items: string[] } }`; `Timeline.cutaways?: TimelineCutaway[]`; `Timeline.hook.patternBreak` allows `"broll"`.
-  - `FootageAssets.cutaways?: Record<string /* beat id */, { kind: "image" | "video"; src: string }>`; `CompiledFootage.warnings: string[]`.
+  - `FootageAssets.cutaways?: Record<string /* beat id */, { kind: "image" | "video"; src: string }>`. `CompiledFootage` is unchanged: placement warnings reach the user through `placementWarnings` (review page) and `generateFootageAssets`'s notes, both from `planCutaways`.
   - `cutawayFit(source: CutawaySource, extras: FootageExtra[], layout: "full" | "split", ratio: number): "cover" | "contain_blur"` (in `cutaways.ts`).
   - Speaker clips under a split cutaway have `layout: "split"` and crop `{ cx: 0.5, cy: faceCentreY clamped to 0.25–0.75 (0.5 without a face), scaleFrom: 1, scaleTo: 1 }`; a clip cut by a cutaway boundary continues as `<sceneId>.2`, `.3`, … with its source span and zoom continued.
 
@@ -1526,21 +1556,21 @@ describe("cutaways", () => {
     expect(compileFootage(on("b2", diagram), transcript, null, assets, style).timeline.cutaways![0].media).toEqual({ kind: "diagram", template: "list", items: ["אחת", "שתיים"] });
   });
 
-  it("fits uploads to their slot and reports placement warnings", () => {
+  it("fits uploads to their slot and leaves out a cutaway that placement dropped", () => {
     const up = plan({
       source: { ...validEditPlan().source, extras: fixtureExtras() },
       beats: validEditPlan().beats.map((b) => (b.id === "b1" ? { ...b, cutaway: { source: { kind: "upload", assetId: EXTRA_IMG }, layout: "full", atMs: 0, durationMs: 1000 } } : b.id === "b3" ? { ...b, cutaway: still("full") } : b)) as EditPlan["beats"],
     });
     const out = compileFootage(up, transcript, null, { ...assets, cutaways: { b1: { kind: "image", src: "asset:x.png" }, b3: { kind: "image", src: "asset:y.png" } } }, style);
     expect(out.timeline.cutaways![0].media).toMatchObject({ kind: "image", fit: "contain_blur" });
-    expect(out.warnings).toEqual(["The cutaway in b3 was dropped: it ran under the CTA card."]);
+    expect(out.timeline.cutaways!.map((c) => c.id)).toEqual(["b1"]); // b3 ran under the CTA card
   });
 });
 ```
 Add to `packages/core/src/timeline-sources.test.ts`:
 ```ts
   it("includes and maps cutaway media, never diagrams", () => {
-    const t = { ...base(), cutaways: [
+    const t = { ...timeline(), cutaways: [
       { id: "b1", fromFrame: 0, durationInFrames: 30, layout: "full" as const, media: { kind: "video" as const, src: "asset:c.mp4", fit: "cover" as const } },
       { id: "b2", fromFrame: 30, durationInFrames: 30, layout: "split" as const, media: { kind: "diagram" as const, template: "list" as const, items: ["a", "b"] } },
     ] };
@@ -1548,7 +1578,7 @@ Add to `packages/core/src/timeline-sources.test.ts`:
     expect(mapTimelineSources(t, (f) => `http://x/${f}`).cutaways![0].media).toMatchObject({ src: "http://x/c.mp4" });
   });
 ```
-(`base()` stands for the timeline the existing tests in that file build; reuse that helper, or `sampleTimeline`-like object already used there.) Run `npx vitest run packages/core`. Expected: FAIL.
+(`timeline()` is the helper at the top of `timeline-sources.test.ts`.) Run `npx vitest run packages/core`. Expected: FAIL.
 
 - [ ] **Step 3: Upload caps and fit** in `packages/core/src/footage/cutaways.ts`. `placeCutaways` takes `plan: Pick<EditPlan, "beats" | "hook" | "ending" | "source">`; right after computing `wanted`:
 ```ts
@@ -1574,12 +1604,11 @@ export function cutawayFit(source: CutawaySource, extras: FootageExtra[], layout
 (import `FootageExtra` type from `../schema/footage`).
 
 - [ ] **Step 4: Compile.** In `packages/core/src/footage/compile.ts`:
-  - `export type FootageAssets = { videoSrc: string; voiceSrc?: string; musicSrc?: string; sfx: Partial<Record<SfxName, string>>; cutaways?: Record<string, { kind: "image" | "video"; src: string }> };` and `export type CompiledFootage = { timeline: Timeline; voiceSegments: VoiceSegment[]; durationMs: number; warnings: string[] };`
+  - `export type FootageAssets = { videoSrc: string; voiceSrc?: string; musicSrc?: string; sfx: Partial<Record<SfxName, string>>; cutaways?: Record<string, { kind: "image" | "video"; src: string }> };` (`CompiledFootage` stays as it is).
   - Pattern break: `const patternBreak = plan.ending.kind === "loop" && plan.hook.patternBreak === "flash" ? "none" : plan.hook.patternBreak;` (drop `requested`; the clip-0 zoom only fires for `"zoom_hit"`, so `broll` gets none).
-  - After the `shots.forEach` loop, replace the Task 1 break block with:
+  - After the `shots.forEach` loop, replace the Task 1 break block (`ctaStart` … `addSnaps`) with:
 ```ts
-  const ctaFrames = Math.min(total, msToFrames(style.ctaMs));
-  const ctaStart = plan.ending.kind === "cta" ? total - ctaFrames : total;
+  const ctaStart = ctaStartFrame(plan, total, style);
   const placement = placeCutaways(plan, shots, style);
   // A cutaway whose asset generation skipped is left out: the speaker stays on screen there.
   const shown = placement.placed.filter((c) => c.source.kind === "diagram" || assets.cutaways?.[c.beatId]);
@@ -1664,8 +1693,8 @@ function splitForCutaways(clips: TimelineClip[], faces: (FaceBox | null)[], spli
       cues.push({ name: "whoosh2", frame: c.fromFrame, volumeDb: style.sfxVolumeDb.whoosh });
     }
 ```
-  - Timeline: `...(cutaways.length ? { cutaways } : {}),` and return `{ timeline, voiceSegments, durationMs: framesToMs(total), warnings: placement.warnings }`.
-  - Imports: `cutawayFit, placeCutaways, type PlacedCutaway` from `./cutaways`; `TimelineCutaway`, `TimelineCrop` types from `../schema/timeline`; `FaceBox` type already imported in Task 1.
+  - Timeline: `...(cutaways.length ? { cutaways } : {}),`; the return value stays `{ timeline, voiceSegments, durationMs: framesToMs(total) }`.
+  - Imports: `cutawayFit, placeCutaways, type PlacedCutaway` from `./cutaways`; `TimelineCutaway`, `TimelineCrop` types from `../schema/timeline`; `FaceBox` type and `ctaStartFrame` (from `./shots`) are already imported since Task 1.
 
 - [ ] **Step 5: Timeline sources** in `packages/core/src/timeline-sources.ts`: add to the refs list `...(t.cutaways ?? []).flatMap((c) => (c.media.kind === "diagram" ? [] : [c.media.src]))`, and in `mapTimelineSources` add:
 ```ts
@@ -1916,7 +1945,7 @@ export function sampleCutawayTimeline(lang: "he" | "en"): Timeline {
   };
 }
 ```
-Add to `footage-render.test.ts`:
+Add to `packages/video/src/footage-render.test.ts` (import `sampleCutawayTimeline` next to `sampleFootageTimeline`):
 ```ts
   it.each([["diagram-flow-split", 40], ["diagram-compare", 80], ["diagram-list", 130]] as const)("renders %s for he and en", async (name, frame) => {
     await mkdir(OUT, { recursive: true });
@@ -1934,8 +1963,10 @@ Run `npx vitest run packages/video`, then look at the six PNGs: the flow card fi
 ---
 ### Task 7: Soul ID reference on Higgsfield stills, extras conforming, cache keys
 
+Checked for free on FFmpeg 8.1.1 before writing this task: a JPEG carrying EXIF orientation 6 (a portrait phone photo) probes as its raw landscape size (400×300 → `probe` says 400×300), while `ffmpeg -i in.jpg out.jpg` writes it upright (300×400) with no orientation tag left. So `probe` on a stored-unchanged phone photo would make `cutawayFit` pick the wrong fit; `conformPhoto` re-encodes extra photos upright instead.
+
 **Files:**
-- Modify: `packages/engine/src/providers/types.ts`, `packages/engine/src/providers/higgsfield.ts`, `packages/engine/src/providers/fake.ts`, `packages/engine/src/footage-ingest.ts` (`footageHashes`), `packages/media/src/ops.ts`
+- Modify: `packages/engine/src/providers/types.ts`, `packages/engine/src/providers/higgsfield.ts`, `packages/engine/src/providers/fake.ts`, `packages/engine/src/footage-ingest.ts` (`footageHashes`), `packages/media/src/ops.ts`, `packages/media/src/testing.ts`
 - Test: `packages/engine/src/providers/higgsfield.test.ts`, `packages/engine/src/providers/fake.test.ts`, `packages/engine/src/footage-ingest.test.ts`, `packages/media/src/ops.test.ts`
 
 **Interfaces:**
@@ -1944,6 +1975,8 @@ Run `npx vitest run packages/video`, then look at the six PNGs: the flow card fi
   - Fake providers: `calls.selfImage` counts stills made with a character.
   - `footageHashes.extra(sha, kind)`, `footageHashes.selfImage(model, prompt, referenceId, strength)`, `footageHashes.cutawayFit(rawHash, durationMs)`.
   - `conformClip(input, output, maxSec = 10): Promise<void>` (fits inside 1080×1920, no crop, 30 fps, H.264, no audio).
+  - `conformPhoto(input, output): Promise<void>` (one frame, EXIF orientation applied; `.jpg` output at `-q:v 2`, otherwise the output's format, e.g. `.png`).
+  - Test helper `addExifOrientation(jpegIn, out, orientation): Promise<void>` in `@reel/media`'s `testing.ts` (inserts an EXIF APP1 segment with only the orientation tag).
 
 - [ ] **Step 1: Failing tests.** Add to `packages/engine/src/providers/higgsfield.test.ts` inside `describe("HiggsfieldImageGen")`:
 ```ts
@@ -2000,7 +2033,24 @@ describe("conformClip", () => {
     expect((await probe(join(dir, "tall-out.mp4"))).video).toMatchObject({ width: 1080, height: 1920 });
   }, 120_000);
 });
+
+describe("conformPhoto", () => {
+  it("writes a phone photo upright, so probe reports the size the reel shows", async () => {
+    const wide = join(dir, "raw.jpg");
+    await makeTestImage(wide, { width: 400, height: 300 });
+    const phone = join(dir, "phone.jpg");
+    await addExifOrientation(wide, phone, 6);
+    expect((await probe(phone)).video).toMatchObject({ width: 400, height: 300 }); // probe ignores the orientation
+    await conformPhoto(phone, join(dir, "upright.jpg"));
+    expect((await probe(join(dir, "upright.jpg"))).video).toMatchObject({ width: 300, height: 400 });
+    await conformPhoto(phone, join(dir, "upright.png"));
+    expect((await probe(join(dir, "upright.png"))).video).toMatchObject({ width: 300, height: 400 });
+    await conformPhoto(wide, join(dir, "plain.jpg"));
+    expect((await probe(join(dir, "plain.jpg"))).video).toMatchObject({ width: 400, height: 300 });
+  }, 60_000);
+});
 ```
+(import `conformPhoto` from `./ops` and `addExifOrientation`, `makeTestImage` from `./testing`.)
 Run `npx vitest run packages/engine/src/providers packages/engine/src/footage-ingest.test.ts packages/media/src/ops.test.ts`. Expected: FAIL.
 
 - [ ] **Step 2: Implement.**
@@ -2040,10 +2090,41 @@ export async function conformClip(input: string, output: string, maxSec = 10): P
   const vf = "scale=w=1080:h=1920:force_original_aspect_ratio=decrease:force_divisible_by=2,fps=30,setsar=1,format=yuv420p";
   await runFfmpeg(["-i", input, "-t", String(maxSec), "-vf", vf, ...H264, "-an", "-movflags", "+faststart", output]);
 }
+
+/**
+ * Extra photos: re-encoded upright. ffmpeg applies the EXIF orientation when decoding (ffprobe reports the raw,
+ * unrotated size), and the output carries no orientation tag, so its probed size is the size the reel shows.
+ */
+export async function conformPhoto(input: string, output: string): Promise<void> {
+  await runFfmpeg(["-i", input, "-frames:v", "1", ...(output.endsWith(".jpg") ? ["-q:v", "2"] : []), output]);
+}
+```
+  - `packages/media/src/testing.ts` (import `readFile`, `writeFile` from `node:fs/promises` if not already imported):
+```ts
+/** Copies a JPEG with an EXIF orientation tag added (6 = a portrait phone photo stored landscape). Tests only. */
+export async function addExifOrientation(input: string, output: string, orientation: number): Promise<void> {
+  const jpeg = await readFile(input);
+  // Big-endian TIFF: header (8 bytes), one IFD with one entry (Orientation, SHORT, count 1), then "no next IFD".
+  const tiff = Buffer.alloc(26);
+  tiff.write("MM\0*", 0, "latin1");
+  tiff.writeUInt32BE(8, 4);
+  tiff.writeUInt16BE(1, 8);
+  tiff.writeUInt16BE(0x0112, 10);
+  tiff.writeUInt16BE(3, 12);
+  tiff.writeUInt32BE(1, 14);
+  tiff.writeUInt16BE(orientation, 18);
+  tiff.writeUInt32BE(0, 22);
+  const payload = Buffer.concat([Buffer.from("Exif\0\0", "latin1"), tiff]);
+  const app1 = Buffer.alloc(4);
+  app1.writeUInt16BE(0xffe1, 0);
+  app1.writeUInt16BE(payload.length + 2, 2);
+  // Right after the SOI marker (the first 2 bytes).
+  await writeFile(output, Buffer.concat([jpeg.subarray(0, 2), app1, payload, jpeg.subarray(2)]));
+}
 ```
 Run the tests. Expected: PASS.
 
-- [ ] **Step 3: Verify and commit.** Run `npx vitest run packages && npm run typecheck`. Expected: PASS. Commit with message `feat(engine): Soul ID reference on Higgsfield stills, conformClip for extra uploads, cutaway cache keys`.
+- [ ] **Step 3: Verify and commit.** Run `npx vitest run packages && npm run typecheck`. Expected: PASS. Commit with message `feat(engine): Soul ID reference on Higgsfield stills, conformClip and conformPhoto for extra uploads, cutaway cache keys`.
 
 ---
 
@@ -2051,16 +2132,17 @@ Run the tests. Expected: PASS.
 
 **Files:**
 - Create: `packages/engine/src/footage-cutaways.ts`
-- Modify: `packages/engine/src/footage-ingest.ts`, `packages/engine/src/footage-generate.ts`, `packages/engine/src/index.ts`
-- Test: `packages/engine/src/footage-cutaways.test.ts` (new), `packages/engine/src/footage-ingest.test.ts`, `packages/engine/src/footage-generate.test.ts`
+- Modify: `packages/engine/src/footage-ingest.ts`, `packages/engine/src/footage-generate.ts`, `packages/engine/src/index.ts`, `apps/worker/src/handlers/generate-footage.ts`, `apps/worker/src/handlers/index.ts` (the worker passes the new generate deps; this task owns that change)
+- Test: `packages/engine/src/footage-cutaways.test.ts` (new), `packages/engine/src/footage-ingest.test.ts`, `packages/engine/src/footage-generate.test.ts`, `apps/worker/src/handlers/generate-footage.test.ts`
 
 **Interfaces:**
-- Consumes: `planCutaways`, `PlacedCutaway`, `cutawayCost`, `estimateFootageCost` (Task 4); `SoulReference`, `footageHashes.*`, `conformClip` (Task 7); `hashes.image`, `hashes.video`, `cached`, `estUsd`, `downloadTo`, `extFromUrl`, `contentTypeFor` (plan 1 / voice pipeline).
+- Consumes: `planCutaways`, `PlacedCutaway`, `cutawayCost`, `estimateFootageCost` (Task 4); `SoulReference`, `footageHashes.*`, `conformClip`, `conformPhoto`, `addExifOrientation` (Task 7); `hashes.image`, `hashes.video`, `cached`, `estUsd`, `downloadTo`, `extFromUrl`, `contentTypeFor` (plan 1 / voice pipeline).
 - Produces:
   - `ingestFootage(originalPath, deps, extras?: { path: string; label: string }[]): Promise<{ source: FootageSource; transcript: Transcript; warnings: string[] }>`; `ingestExtras(files, deps): Promise<{ extras: FootageExtra[]; warnings: string[] }>`.
   - `type SpendBudget = { remaining: number }`; `makeBudget(usd): SpendBudget`; `takeBudget(b, usd): boolean`.
   - `cutawayPrompt(prompt, layout): string`; `type CutawayAssets = Record<string, { kind: "image" | "video"; asset: StoredAsset }>`; `generateCutaways(placed, plan, deps: CutawayGenDeps): Promise<{ assets: CutawayAssets; notes: string[] }>`; `type CutawayGenDeps = { image: ImageGen; video: VideoGen; uploader: MediaUploader; store: AssetStore; tmpDir: string; log: (m: string) => void; character: SoulReference | null; budget: SpendBudget }`.
-  - `FootageGenDeps` gains `image`, `video`, `uploader`, `character: SoulReference | null`; `FootageGenerated` gains `cutaways: CutawayAssets`; `buildFootageTimeline` passes them to the compiler.
+  - `FootageGenDeps` gains `image`, `video`, `uploader`, `character: SoulReference | null`; `FootageGenerated` gains `cutaways: CutawayAssets`; `generateFootageAssets`'s notes include the placement warnings (`planCutaways(...).warnings`, spec §5.5) before the generation notes; `buildFootageTimeline` passes the cutaways to the compiler.
+  - Worker: `GenerateFootageHandlerDeps` gains `image: ImageGen; video: VideoGen; uploader: MediaUploader` (passed from `handlers/index.ts`), with `character: null` until Task 10 adds the lookup.
 
 - [ ] **Step 1: Failing generation tests** `packages/engine/src/footage-cutaways.test.ts`:
 ```ts
@@ -2286,21 +2368,26 @@ describe("ingest extras", () => {
     await makeTestVideo(join(dir, "talk.mp4"), { durationSec: 4, width: 720, height: 1280, withAudio: true });
     await makeTestImage(join(dir, "shot.png"), { width: 1920, height: 1080 });
     await makeTestVideo(join(dir, "demo.mov"), { durationSec: 12, width: 1280, height: 720 });
+    await makeTestImage(join(dir, "raw.jpg"), { width: 400, height: 300 });
+    await addExifOrientation(join(dir, "raw.jpg"), join(dir, "phone.jpg"), 6);
     await writeFile(join(dir, "bad.jpg"), "not an image");
     const { source, warnings } = await ingestFootage(join(dir, "talk.mp4"), deps, [
       { path: join(dir, "shot.png"), label: "צילום מסך" },
       { path: join(dir, "demo.mov"), label: "demo" },
+      { path: join(dir, "phone.jpg"), label: "phone" },
       { path: join(dir, "bad.jpg"), label: "bad" },
     ]);
-    expect(source.extras.map((e) => [e.kind, e.width, e.label])).toEqual([["image", 1920, "צילום מסך"], ["video", 1080, "demo"]]);
+    expect(source.extras.map((e) => [e.kind, e.width, e.label])).toEqual([["image", 1920, "צילום מסך"], ["video", 1080, "demo"], ["image", 300, "phone"]]);
+    expect(source.extras[2].height).toBe(400);
     expect(source.extras[1].durationMs).toBeGreaterThan(9900);
     expect(source.extras[1].durationMs).toBeLessThanOrEqual(10_050);
     expect((await deps.store.get(source.extras[0].assetId))!.fileName).toMatch(/\.png$/);
+    expect((await deps.store.get(source.extras[2].assetId))!.fileName).toMatch(/\.jpg$/);
     expect(warnings).toEqual(['The extra file "bad" couldn\'t be read, so it was left out.']);
   }, 300_000);
 });
 ```
-(import `makeTestImage` and `writeFile`). Run it. Expected: FAIL.
+(import `addExifOrientation`, `makeTestImage` from `@reel/media` and `writeFile`). The portrait phone photo comes out 300×400: stored upright, so `cutawayFit` sees its real shape. Run it. Expected: FAIL.
 
 - [ ] **Step 4: Implement** in `packages/engine/src/footage-ingest.ts`:
 ```ts
@@ -2317,12 +2404,20 @@ export async function ingestExtras(files: { path: string; label: string }[], dep
       continue;
     }
     const sha = await sha256File(f.path);
+    // Not `reproducible`: generation has no way to remake an extra, so a failed mirror must fail ingest (a retry is free)
+    // rather than leave the extra on this machine only.
     const asset = await cached(deps.store, footageHashes.extra(sha, kind), async () => {
-      if (kind === "image") return { path: f.path, ext: ext === "jpeg" ? "jpg" : ext, meta: { kind: "image", provider: "upload", extra: { sha } } };
+      if (kind === "image") {
+        // Upright (EXIF orientation applied): probe reports a phone photo's raw size, Chrome shows it rotated.
+        const photoExt = ext === "jpg" || ext === "jpeg" ? "jpg" : "png";
+        const out = join(deps.tmpDir, `extra-${i + 1}.${photoExt}`);
+        await conformPhoto(f.path, out);
+        return { path: out, ext: photoExt, meta: { kind: "image", provider: "ffmpeg", extra: { sha } } };
+      }
       deps.log(`ingest: fitting extra clip ${i + 1}`);
       const out = join(deps.tmpDir, `extra-${i + 1}.mp4`);
       await conformClip(f.path, out);
-      return { path: out, ext: "mp4", meta: { kind: "video", provider: "ffmpeg", reproducible: true, extra: { sha } } };
+      return { path: out, ext: "mp4", meta: { kind: "video", provider: "ffmpeg", extra: { sha } } };
     });
     const stored = await probe(asset.path);
     extras.push({
@@ -2338,23 +2433,34 @@ Change `ingestFootage` to `export async function ingestFootage(originalPath: str
   const { extras, warnings } = await ingestExtras(extraFiles, deps);
   return { source: { assetId: working.hash, durationMs, transcriptAssetId: transcriptAsset.hash, faceTrackAssetId: faces.hash, extras }, transcript, warnings };
 ```
-(import `conformClip` from `@reel/media`, `extname` from `node:path`, `FootageExtra` type from `@reel/core`). The extras run after transcription because they are free and an upload without speech should fail before any work on extras. Run the ingest tests. Expected: PASS.
+(import `conformClip`, `conformPhoto` from `@reel/media`, `extname` from `node:path`, `FootageExtra` type from `@reel/core`). The extras run after transcription because they are free and an upload without speech should fail before any work on extras. Run the ingest tests. Expected: PASS.
 
 - [ ] **Step 5: Generation wiring, failing test first.** In `footage-generate.test.ts`, extend `prepared()`'s deps with `image: providers.image, video: providers.video, uploader: providers.uploader, character: null`, then add:
 ```ts
+  // The 6 s test video plans as b1 = frames 0–81 and b2 = 81–166, with the CTA card from frame 91: cutaways go on b1.
   it("renders an AI cutaway (split) within the estimate and lists cutaway steps", async () => {
     const { dir, plan: p, deps, providers } = await prepared();
     const cut = { source: { kind: "ai_broll" as const, prompt: "laptop", media: "image" as const }, layout: "split" as const, atMs: 0, durationMs: 1000 };
-    const plan = parseEditPlan({ ...p, beats: p.beats.map((b) => (b.id === "b2" ? { ...b, cutaway: cut } : b)), estimate: { ...p.estimate, credits: 0.04 } });
+    const plan = parseEditPlan({ ...p, beats: p.beats.map((b) => (b.id === "b1" ? { ...b, cutaway: cut } : b)), estimate: { ...p.estimate, credits: 0.04 } });
     const gen = await generateFootageAssets(plan, deps);
     expect(gen.notes).toEqual([]);
-    expect(Object.keys(gen.cutaways)).toEqual(["b2"]);
+    expect(Object.keys(gen.cutaways)).toEqual(["b1"]);
     const out = await renderFootage(plan, gen, deps, join(dir, "out"));
     expect(out.timeline.cutaways).toHaveLength(1);
     expect(out.timeline.clips.some((c) => c.layout === "split")).toBe(true);
     expect((await probe(out.reel)).video).toMatchObject({ width: 1080, height: 1920 });
     expect(providers.calls.image).toBe(1);
   }, 900_000);
+
+  it("adds the placement warnings to the generation notes, before paying for anything", async () => {
+    const { plan: p, deps, providers } = await prepared();
+    const cut = { source: { kind: "ai_broll" as const, prompt: "laptop", media: "image" as const }, layout: "full" as const, atMs: 0, durationMs: 1000 };
+    const plan = parseEditPlan({ ...p, beats: p.beats.map((b) => (b.id === "b2" ? { ...b, cutaway: cut } : b)), estimate: { ...p.estimate, credits: 1 } });
+    const gen = await generateFootageAssets(plan, deps);
+    expect(gen.notes).toEqual(["The cutaway in b2 was dropped: it ran under the CTA card."]);
+    expect(gen.cutaways).toEqual({});
+    expect(providers.calls.image).toBe(0);
+  }, 300_000);
 ```
 Run `npx vitest run packages/engine/src/footage-generate.test.ts`. Expected: FAIL.
 
@@ -2365,7 +2471,9 @@ Run `npx vitest run packages/engine/src/footage-generate.test.ts`. Expected: FAI
   - After the music step:
 ```ts
   emit({ type: "step", step: "visuals", status: "running" });
-  const { placed } = planCutaways(plan, inputs.transcript.words, deps.style);
+  const { placed, warnings: placementNotes } = planCutaways(plan, inputs.transcript.words, deps.style);
+  // Spec §5.5: every trim or drop is also a generation note (the review page showed the same lines before approval).
+  notes.push(...placementNotes);
   const cut = await generateCutaways(placed, plan, { image: deps.image, video: deps.video, uploader: deps.uploader, store, tmpDir: join(deps.tmpDir, "cutaways"), log, character: deps.character, budget });
   notes.push(...cut.notes);
   emit({ type: "step", step: "visuals", status: "done" });
@@ -2375,7 +2483,7 @@ Run `npx vitest run packages/engine/src/footage-generate.test.ts`. Expected: FAI
   - Imports: `planCutaways` from `@reel/core`; `generateCutaways, makeBudget, takeBudget, type CutawayAssets` from `./footage-cutaways`; `ImageGen, MediaUploader, SoulReference, VideoGen` types from `./providers/types`.
   - Keep the worker compiling: in `apps/worker/src/handlers/generate-footage.ts` add `image: ImageGen; video: VideoGen; uploader: MediaUploader;` to `GenerateFootageHandlerDeps` and `image: deps.image, video: deps.video, uploader: deps.uploader, character: null` to `genDeps`; in `handlers/index.ts` pass `image: deps.providers.image, video: deps.providers.video, uploader: deps.providers.uploader`; in `generate-footage.test.ts`'s `approvedPlan()` add the same three fake providers to `deps`. Task 10 replaces `character: null` with the character lookup.
 
-Run `npx vitest run packages/engine`. Expected: PASS, including plan 1's music tests (the budget gives the same answers for music alone).
+Run `npx vitest run packages/engine apps/worker/src/handlers/generate-footage.test.ts`. Expected: PASS, including plan 1's music tests (the budget gives the same answers for music alone).
 
 - [ ] **Step 7: Commit** with message `feat(engine): ingest extra photos and clips; generate AI B-roll, Soul ID shots and uploads as cutaways within the approved estimate, with skip notes`.
 
@@ -2388,9 +2496,9 @@ Run `npx vitest run packages/engine`. Expected: PASS, including plan 1's music t
 
 **Interfaces:**
 - Consumes: `EditPlanDraft` with `cutaway` and `NO_CUTAWAY`, `Cutaway` (Task 3); `cutawayBudget`, `applyCutawayBudget` (Task 4); `FootageExtra` (Task 3).
-- Produces: `FootagePlanRequest.character?: { id: string; name: string }`; `draftCutaway(beatId, c, req): Cutaway | undefined` (throws a repair-ready message for an unknown upload id); the plan's `character` and budget warnings; the fake planner puts an upload on the first beat (when there is one) and a split list diagram on the second.
+- Produces: `FootagePlanRequest.character?: { id: string; name: string }`; `draftCutaway(beatId, c, req): Cutaway | undefined` (throws a repair-ready message for an unknown upload id); the plan's `character` and budget warnings; the fake planner puts an upload on the first beat when the user sent extras (and then a split list diagram on the second beat), otherwise the split list diagram on the first beat.
 
-- [ ] **Step 1: Failing tests.** In `packages/engine/src/footage-planner.test.ts` add `cutaway: NO_CUTAWAY` to every beat of the `draft()` fixture if Task 3 hasn't already, then add:
+- [ ] **Step 1: Failing tests.** In `packages/engine/src/footage-planner.test.ts` check that every draft-beat literal has `cutaway: NO_CUTAWAY` (Task 3 added it at lines 13, 100 and 106). In the existing test "lists beats with word indices, the keyword, the library and plan-1 limits" (around line 69) the removed prompt line is pinned: replace `expect(u).toMatch(/Cutaways, B-roll and background replacement are not available/);` with `expect(u).toContain("Background replacement is not available in this version: never mention it.");` and rename the test to "lists beats with word indices, the keyword and the library". Then add:
 ```ts
 import { CHARACTER_ID, EXTRA_IMG, EXTRA_VID, fixtureExtras } from "../../core/src/testing/fixtures";
 import { NO_CUTAWAY, type DraftCutaway } from "@reel/core";
@@ -2435,7 +2543,7 @@ describe("cutaways from Claude's draft", () => {
   });
 });
 ```
-Add to `fake.test.ts`'s plan test: `expect(plan.beats[1].cutaway?.source.kind).toBe("diagram");` and a second case with `source: { ...validEditPlan().source, extras: fixtureExtras() }` expecting `plan.beats[0].cutaway?.source).toEqual({ kind: "upload", assetId: EXTRA_IMG })`. Run `npx vitest run packages/engine/src/footage-planner.test.ts packages/engine/src/providers/fake.test.ts`. Expected: FAIL.
+Add to `fake.test.ts`'s plan test (it plans in Hebrew): `expect(plan.beats[0].cutaway?.source).toEqual({ kind: "diagram", template: "list", items: ["בלי עריכה", "בחינם"] });` (no extras: the diagram goes on the first beat) and a second case with `source: { ...validEditPlan().source, extras: fixtureExtras() }` expecting `plan.beats[0].cutaway?.source).toEqual({ kind: "upload", assetId: EXTRA_IMG })` and `plan.beats[1].cutaway?.source.kind).toBe("diagram")`. Run `npx vitest run packages/engine/src/footage-planner.test.ts packages/engine/src/providers/fake.test.ts`. Expected: FAIL.
 
 - [ ] **Step 2: Prompt.** In `footageSystemPrompt()`:
   - change the pattern-break line to `'  - patternBreak: "zoom_hit" (a fast punch-in), "flash" (two white frames), "broll" (your first cutaway opens the reel, full screen, for 1 s: only when it is a strong visual hook) or "none".',`
@@ -2502,12 +2610,15 @@ In `buildEditPlan`:
 - [ ] **Step 4: Fake planner.** In `providers/fake.ts`'s `footagePlanner` draft, after `const ids = …`:
 ```ts
       const hasUpload = /^- x1 \(/m.test(user);
+      const diagram: DraftCutaway = { ...NO_CUTAWAY, kind: "diagram", template: "list", items: he ? ["בלי עריכה", "בחינם"] : ["No editing", "Free"], layout: "split", atMs: 0, durationMs: 1200 };
+      // The diagram goes on the first beat unless an upload takes it: the 6 s test videos' second beat starts 0.3 s
+      // before the CTA card, where placement would drop it with a note.
       const cutawayFor = (i: number): DraftCutaway =>
-        i === 0 && hasUpload ? { ...NO_CUTAWAY, kind: "upload", uploadId: "x1", atMs: 0, durationMs: 1000 }
-        : i === 1 ? { ...NO_CUTAWAY, kind: "diagram", template: "list", items: he ? ["בלי עריכה", "בחינם"] : ["No editing", "Free"], layout: "split", atMs: 0, durationMs: 1200 }
+        i === 0 ? (hasUpload ? { ...NO_CUTAWAY, kind: "upload", uploadId: "x1", atMs: 0, durationMs: 1000 } : diagram)
+        : i === 1 && hasUpload ? diagram
         : NO_CUTAWAY;
 ```
-and give each draft beat `cutaway: cutawayFor(i)` (map with index). Both are free, so plan 1's fake-flow tests keep their estimates and notes.
+and give each draft beat `cutaway: cutawayFor(i)` (map with index; import `NO_CUTAWAY` and `type DraftCutaway` from `@reel/core`). Both are free and the no-extras diagram places without a warning on the 6 s test videos (b1 = frames 0–81, CTA card from 91), so plan 1's fake-flow tests keep their estimates and empty notes.
 
 - [ ] **Step 5: Verify and commit.** Run `npx vitest run packages && npm run typecheck`. Expected: PASS. Commit with message `feat(engine): planner writes cutaways within the budget (B-roll, AI shots of you, uploads, diagrams) and knows the uploads and character; fake planner adds free cutaways`.
 
@@ -2516,12 +2627,12 @@ and give each draft beat `cutaway: cutawayFor(i)` (map with index). Both are fre
 ### Task 10: Worker: extras, characters and cutaway generation
 
 **Files:**
-- Modify: `apps/worker/src/reel-db.ts`, `apps/worker/src/testing/fakes.ts`, `apps/worker/src/handlers/footage.ts`, `apps/worker/src/handlers/generate-footage.ts`, `apps/worker/src/handlers/index.ts`
+- Modify: `apps/worker/src/reel-db.ts`, `apps/worker/src/testing/fakes.ts`, `apps/worker/src/handlers/footage.ts`, `apps/worker/src/handlers/generate-footage.ts` (the character lookup only; Task 8 already added the `image`, `video`, `uploader` deps and their wiring in `handlers/index.ts`)
 - Test: `apps/worker/src/handlers/footage.test.ts`, `apps/worker/src/handlers/generate-footage.test.ts`
 
 **Interfaces:**
-- Consumes: `IngestFootageJobPayloadSchema.extras` (Task 2); `ingestFootage(…, extras)` and its `warnings`, `FootageGenDeps.image/video/uploader/character` (Task 8); `FootagePlanRequest.character` (Task 9); `SOUL_REFERENCE_STRENGTH` (Task 7).
-- Produces: `type SoulCharacter = { id: string; name: string; referenceId: string }`; `ReelDb.getCharacter(id): Promise<SoulCharacter | null>`; `InMemoryReelDb.characters: SoulCharacter[]`; `GenerateFootageHandlerDeps` gains `image`, `video`, `uploader`.
+- Consumes: `IngestFootageJobPayloadSchema.extras` (Task 2); `ingestFootage(…, extras)` and its `warnings`, `FootageGenDeps.image/video/uploader/character`, `GenerateFootageHandlerDeps.image/video/uploader` (Task 8); `FootagePlanRequest.character` (Task 9); `SOUL_REFERENCE_STRENGTH` (Task 7).
+- Produces: `type SoulCharacter = { id: string; name: string; referenceId: string }`; `ReelDb.getCharacter(id): Promise<SoulCharacter | null>`; `InMemoryReelDb.characters: SoulCharacter[]`; the generate handler's `character` from that lookup (replacing Task 8's `character: null`).
 
 - [ ] **Step 1: Failing tests.** Add to `apps/worker/src/handlers/footage.test.ts` (imports: `parseEditPlan` from `@reel/core`, `makeTestImage`, `makeTestVideo` from `@reel/media`, `CHARACTER_ID` from the core fixtures, plus the existing helpers):
 ```ts
@@ -2573,21 +2684,22 @@ Add to `apps/worker/src/handlers/generate-footage.test.ts` (`approvedPlan()`'s d
     s.record.json = {
       ...plan,
       character: { id: CHARACTER_ID, name: "Alex" },
-      beats: plan.beats.map((b) => (b.id === "b2" ? { ...b, cutaway: { source: { kind: "ai_self", prompt: "the person on a plane", media: "image" }, layout: "full", atMs: 0, durationMs: 1000 } } : b)),
+      // b1: the 6 s test video's b2 starts just before the CTA card, so a cutaway there would be dropped.
+      beats: plan.beats.map((b) => (b.id === "b1" ? { ...b, cutaway: { source: { kind: "ai_self", prompt: "the person on a plane", media: "image" }, layout: "full", atMs: 0, durationMs: 1000 } } : b)),
       estimate: { ...plan.estimate, credits: 1 },
     };
     s.db.characters.push({ id: CHARACTER_ID, name: "Alex", referenceId: "soul-ref-123" });
     const ok = await createGenerateFootageHandler(s.deps)(makeJob({ type: "generate_footage", project_id: PID, payload: { storyboardId: s.record.id } }), ctx);
     expect(ok.status).toBe("done");
     expect(s.providers.calls.selfImage).toBe(1);
-    expect(s.db.renders[0].timeline.cutaways?.map((c) => c.id)).toContain("b2");
+    expect(s.db.renders[0].timeline.cutaways?.map((c) => c.id)).toContain("b1");
 
     // Version 2 of the same plan, approved after the character was deleted.
     s.db.characters.length = 0;
     const v2 = { id: crypto.randomUUID(), projectId: PID, version: 2, json: { ...(s.record.json as object), version: 2 }, status: "approved" as const };
     s.db.storyboards.push(v2);
     const gone = await createGenerateFootageHandler(s.deps)(makeJob({ type: "generate_footage", project_id: PID, payload: { storyboardId: v2.id } }), ctx);
-    expect(gone.progress?.notes).toContain("The AI shot of you in b2 was skipped: its character no longer exists.");
+    expect(gone.progress?.notes).toContain("The AI shot of you in b1 was skipped: its character no longer exists.");
     expect(s.providers.calls.selfImage).toBe(1);
   }, 900_000);
 ```
@@ -2625,7 +2737,7 @@ In `testing/fakes.ts`: `readonly characters: SoulCharacter[] = [];` and `async g
       if (!storagePath.startsWith(prefix) || extras.some((e) => !e.storagePath.startsWith(prefix))) throw new Error("This upload belongs to another reel.");
 ```
   download each extra next to the original (`join(tmpDir, basename(e.storagePath))`), then call `ingestFootage(original, ingestDeps, extraFiles)` with `extraFiles = extras.map((e) => ({ path, label: e.label }))`, and pass `extraWarnings: warnings` to `planAndSave`.
-  - Re-plan needs nothing new: its payload carries the settings (with `characterId`) and the source (with `extras`).
+  - Re-plan: the `plan_footage` handler goes through the same `planAndSave`, so it reads `settings.characterId` and the source's `extras` like ingest. The web's Re-plan action (Task 12) puts the plan's current character into those settings, so a character changed or removed in the plan's Settings wins over the one picked at upload.
 
 - [ ] **Step 4: Generate handler** (`handlers/generate-footage.ts`; Task 8 already added `image`, `video`, `uploader` and `character: null`): before building `genDeps`:
 ```ts
@@ -2649,7 +2761,8 @@ and replace `character: null` with `character` in `genDeps`. `main.ts` needs no 
 - Produces:
   - `startFootage(deps, { settings, fileName, size, durationSec, extras?: { name: string; size: number }[] })` → `{ ok: true; projectId; storagePath; extraPaths: string[] }`.
   - `finishFootage(deps, { projectId, storagePath, settings, extras?: unknown })` queues ingest with `extras: ExtraUpload[]`.
-  - `uploadAll(items, done: Set<string>, upload, onProgress): Promise<void>` and `extraContentType(ext): string` in `footage-send.ts`.
+  - `uploadAll(items, done: Set<string>, upload, onProgress): Promise<void>`, `forgetUploadsAfter(done: Set<string>, outcome: SendOutcome): void` (empties `done` when the outcome is `failed` with `uploaded: false`, i.e. storage is missing a file, so "Upload again" re-sends instead of skipping it forever) and `extraContentType(ext): string` in `footage-send.ts`.
+  - `footageTitle(fileName)` becomes `baseName(fileName, 120, "My video")` (Task 2's shared helper; same output as today).
   - `parseFootageSettings` reads `characterId` (empty = none).
   - `CharacterInputSchema = { name (1–40), referenceId (/^[A-Za-z0-9_-]{8,64}$/) }`; server action `addCharacter(input)`.
 
@@ -2683,7 +2796,7 @@ describe("extra files", () => {
 ```
 In `footage-send.test.ts`:
 ```ts
-import { uploadAll } from "./footage-send";
+import { forgetUploadsAfter, uploadAll } from "./footage-send";
 
 describe("uploadAll", () => {
   const items = [{ objectName: "a", size: 100 }, { objectName: "b", size: 300 }, { objectName: "c", size: 100 }];
@@ -2704,6 +2817,18 @@ describe("uploadAll", () => {
     expect([...done]).toEqual(["a", "b", "c"]);
     expect(progress.slice(0, 3)).toEqual([0.1, 0.2, 0.5]);
     expect(progress.at(-1)).toBe(1);
+  });
+  it("after storage reports a missing file, Upload again sends the files again instead of skipping them", async () => {
+    const done = new Set(["a", "b", "c"]);
+    forgetUploadsAfter(done, { kind: "failed", errors: ["x"], uploaded: true }); // only the recording failed: keep
+    expect([...done]).toEqual(["a", "b", "c"]);
+    forgetUploadsAfter(done, { kind: "interrupted", errors: ["x"] }); // Resume continues: keep
+    expect([...done]).toEqual(["a", "b", "c"]);
+    forgetUploadsAfter(done, { kind: "failed", errors: ['"demo" didn\'t finish uploading. Upload again.'], uploaded: false });
+    expect([...done]).toEqual([]);
+    const sent: string[] = [];
+    await uploadAll(items, done, async (item) => { sent.push(item.objectName); }, () => {});
+    expect(sent).toEqual(["a", "b", "c"]);
   });
 });
 ```
@@ -2765,7 +2890,11 @@ after the source-video `objectExists` check:
     if (!(await deps.objectExists(e.storagePath))) return { ok: false, errors: [`"${e.label}" didn't finish uploading. Upload again.`], uploadMissing: true };
   }
 ```
-and queue `{ storagePath: input.storagePath, settings: settings.data, extras: extras.data }`. (Imports: `checkExtraFiles, EXTRA_MAX_FILES, extraExt, extraStoragePath, ExtraUploadSchema` from `@reel/core`, `* as z` from `zod`.) In `parseFootageSettings` add `...(str("characterId") ? { characterId: str("characterId") } : {}),`. In `footage-send.ts`:
+and queue `{ storagePath: input.storagePath, settings: settings.data, extras: extras.data }`. Replace `footageTitle`'s body with the shared helper (same output; the existing `footageTitle` tests stay green):
+```ts
+export const footageTitle = (fileName: string) => baseName(fileName, 120, "My video");
+```
+(Imports: `baseName, checkExtraFiles, EXTRA_MAX_FILES, extraExt, extraStoragePath, ExtraUploadSchema` from `@reel/core`, `* as z` from `zod`.) In `parseFootageSettings` add `...(str("characterId") ? { characterId: str("characterId") } : {}),`. In `footage-send.ts`:
 ```ts
 const EXTRA_TYPES: Record<string, string> = { mp4: "video/mp4", mov: "video/quicktime", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
 export const extraContentType = (ext: string) => EXTRA_TYPES[ext] ?? "application/octet-stream";
@@ -2774,6 +2903,14 @@ export const extraContentType = (ext: string) => EXTRA_TYPES[ext] ?? "applicatio
  * Uploads every item not yet in `done`, in order; each finished one joins `done`, so "Resume upload" never sends a
  * finished file again (tus forgets finished uploads and would start over). Progress is by bytes over all items.
  */
+/**
+ * After finish says a file is missing from storage ("Upload again"), `done` no longer matches storage: forget it, so
+ * the next send uploads every file again. Interruptions and failed recordings keep it (nothing is missing there).
+ */
+export function forgetUploadsAfter(done: Set<string>, outcome: SendOutcome): void {
+  if (outcome.kind === "failed" && !outcome.uploaded) done.clear();
+}
+
 export async function uploadAll<T extends { objectName: string; size: number }>(
   items: T[], done: Set<string>, upload: (item: T, onFraction: (f: number) => void) => Promise<void>, onProgress: (fraction: number) => void,
 ): Promise<void> {
@@ -2837,7 +2974,7 @@ Run the tests. Expected: PASS.
         setProgress,
       ),
 ```
-  (`getToken` is the existing inline token getter, pulled into a `const`.) Lock the extras inputs with the rest of the fieldset.
+  (`getToken` is the existing inline token getter, pulled into a `const`.) Right after `sendFootage` returns, call `forgetUploadsAfter(doneRef.current, o)` (next to the existing `if (o.kind === "failed") setUploaded(o.uploaded);`), so "Upload again" really re-sends. Lock the extras inputs with the rest of the fieldset.
   - `actions.ts`: `startFootageUpload` input type gains `extras?: { name: string; size: number }[]` and returns `extraPaths`; `finishFootageUpload` input gains `extras: { storagePath: string; label: string }[]` (both pass straight through).
 
 - [ ] **Step 4: Characters page.**
@@ -2876,6 +3013,8 @@ export async function addCharacter(input: unknown): Promise<Result> {
   - `PlanAction` gains `{ type: "setCutaway"; beatId: string; cutaway: Cutaway | null }` and `{ type: "setCharacter"; character: { id: string; name: string } | null }`; `setPatternBreak.value` allows `"broll"`.
   - `cutaway-edit.ts`: `type CutawayChoice = "none" | "ai_broll:image" | "ai_broll:video" | "ai_self:image" | "ai_self:video" | "upload" | "diagram"`; `cutawayChoice(c?: Cutaway): CutawayChoice`; `defaultCutaway(choice, plan, previous?: Cutaway): Cutaway | null`; `cutawayPriceLabel(c: Cutaway): string`; `placementWarnings(plan, words, style): string[]`.
   - `PlanWriteDeps.getCharacter(id): Promise<{ id: string; name: string } | null>`.
+  - `replan` queues the settings with the plan's current character (`characterId = plan.character?.id`, absent when the plan has none), not the one picked at upload.
+  - `progress-view.ts`: `generate_footage` steps `voice, music, visuals ("Cutaways"), render, export`.
 
 - [ ] **Step 1: Failing tests.** `apps/web/lib/cutaway-edit.test.ts`:
 ```ts
@@ -2935,8 +3074,28 @@ Add to `approve-plan.test.ts` (give `deps()` a default `getCharacter: vi.fn(asyn
     expect(await savePlan(d, { projectId: "p1", storyboardId: SB, json: client("11111111-2222-4333-8444-555555555555") }))
       .toEqual({ ok: false, errors: ["The character you picked no longer exists. Pick another one or remove the AI shots of you."] });
   });
+  it("Re-plan follows the plan's character, not the one picked at upload", async () => {
+    const upload = { storagePath: "footage/x/source.mp4", settings: { language: "he" as const, targetDurationSec: 15 as const, characterId: "11111111-2222-4333-8444-555555555555" } };
+    const row = (json: unknown): Row => ({ projectId: "p1", version: 1, status: "draft", json });
+    const settingsOf = (d: { queued: unknown[] }) => (d.queued[0] as [string, { settings: unknown }])[1].settings;
+    const changed = deps({ ingestPayload: async () => upload, getStoryboard: async () => row({ ...stored(), character: { id: CHAR, name: "Alex" } }) });
+    expect(await replan(changed, { projectId: "p1", storyboardId: SB, instruction: "" })).toEqual({ ok: true });
+    expect(settingsOf(changed)).toEqual({ language: "he", targetDurationSec: 15, characterId: CHAR });
+    const removed = deps({ ingestPayload: async () => upload });
+    expect(await replan(removed, { projectId: "p1", storyboardId: SB, instruction: "" })).toEqual({ ok: true });
+    expect(settingsOf(removed)).toEqual({ language: "he", targetDurationSec: 15 });
+  });
 ```
-In `progress-view.test.ts`, update any expectation of the `generate_footage` steps to `["voice", "music", "visuals", "render", "export"]`. Run `npx vitest run apps/web/lib`. Expected: FAIL.
+Add to `progress-view.test.ts` (no existing test pins the `generate_footage` step list):
+```ts
+  it("lists the cutaway step of footage generation", () => {
+    const v = describeJob({ type: "generate_footage", status: "running", progress: { steps: { voice: "done", music: "done", visuals: "running" }, scenes: {}, notes: [] }, error: null }, []);
+    expect(v!.steps.map((s) => [s.key, s.label, s.state])).toEqual([
+      ["voice", "Cut audio", "done"], ["music", "Music", "done"], ["visuals", "Cutaways", "running"], ["render", "Render", "pending"], ["export", "Export", "pending"],
+    ]);
+  });
+```
+Run `npx vitest run apps/web/lib`. Expected: FAIL.
 
 - [ ] **Step 2: Implement the helpers.** `apps/web/lib/cutaway-edit.ts`:
 ```ts
@@ -3007,7 +3166,12 @@ In `approve-plan.ts`: add `getCharacter(id: string): Promise<{ id: string; name:
     plan = { ...plan, character: found };
   }
 ```
-and compute the estimate on `plan`. In `footage-actions.ts` add:
+and compute the estimate on `plan`. In `replan`, take the character from the stored plan (the user may have changed or removed it in Settings since the upload):
+```ts
+  const { characterId: _uploadCharacter, ...picked } = (await deps.ingestPayload(input.projectId))?.settings ?? fallback;
+  const settings: FootageSettings = { ...picked, ...(stored.character ? { characterId: stored.character.id } : {}) };
+```
+(replacing the `const settings = …` line). In `footage-actions.ts` add:
 ```ts
     async getCharacter(id) {
       const { data, error } = await sb.from("soul_characters").select("id, name").eq("id", id).maybeSingle();
