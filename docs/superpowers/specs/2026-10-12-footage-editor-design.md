@@ -2,6 +2,7 @@
 
 **Date:** 2026-10-12
 **Status:** approved in chat, section by section; awaiting review of this written spec
+**Amended:** 2026-10-13, look pass (plan 2b, see §11): iOS glass captions in white and red, red-sticker headline and CTA, about one cutaway every 3 s, cutaway transitions, Ken Burns drift, iOS diagram cards, keyword callouts and a progress bar. The edits below are marked *(look pass)*.
 **Builds on:** `2026-09-30-social-reel-agent-design.md` (the "footage" format and Phase 4 "own footage") and `2026-10-01-reel-styles-design.md` (merged to main at 825ef42)
 **Reference analysis:** `2026-10-12-footage-editor/reference-style-report.md`. It measures six reference reels the user supplied (@pauloshimas and Hebrew creators in the same style). Every number marked *(ref)* below comes from that report.
 
@@ -43,12 +44,13 @@ The user uploads a video of themselves talking. The app returns a finished 9:16 
 
 ## 2. Scope
 
-The work is delivered as **three implementation plans**. Each ends in a usable, merged state.
+The work is delivered as **three implementation plans**, plus a look pass (2b) added after the first real reels. Each ends in a usable, merged state.
 
 | Plan | Contents |
 |---|---|
 | **1. Core edit** | Upload, ingest (working copy, transcription, face track), beat splitting, edit-plan schema and planner, edit compiler, pill captions, punch-in zooms, hook (headline, cold open, pattern break), CTA and loop ending, music (library, AI, none), sound-effect pack, plan review page, fake providers |
 | **2. Cutaways** | Higgsfield B-roll cutaways, AI shots of the user (Soul ID character, built on the existing `higgsfield-soul-id` flow), user's extra uploads, split-screen layout, three line-art diagram card templates |
+| **2b. Look pass** *(look pass)* | iOS glass-pill captions (white, red, Heebo), red-sticker headline and CTA, denser B-roll budget, cutaway transitions and Ken Burns drift, iOS diagram cards, keyword callouts, progress bar (§11) |
 | **3. Background replacement** | Person segmentation (Swift/Vision helper), speaker-plate compositing, AI and brand backgrounds, per-section changes. Gated on a free spike (§9). |
 
 **Out of scope:**
@@ -76,7 +78,7 @@ EditPlan {
   beats: Beat[]                                // in source order; code splits them, Claude annotates
   hook: {
     coldOpenBeatId?: string                    // beat played first, then the reel continues from the start
-    headline?: { small: string; big: string }  // small white line + huge yellow word(s)
+    headline?: { small: string; big: string }  // small white line on glass + huge white word(s) on a red sticker (look pass; was yellow)
     patternBreak: "zoom_hit" | "flash" | "broll" | "none"
     reason: string                             // Claude's one-line explanation, shown in review
   }
@@ -93,8 +95,9 @@ Beat {
   id, startWordIdx, endWordIdx                 // span in the transcript (word indices)
   keep: boolean                                // Claude drops retakes, false starts, weak tangents; user can override
   dropReason?: string
-  emphasisWordIdx?: number                     // caption word shown in red
+  emphasisWordIdx?: number                     // caption word shown white on a red capsule (look pass)
   emoji?: "👆" | "👇" | string                 // optional, at line end
+  callout?: { text: string }                   // look pass: a sticker badge, a number ("1/5") or 1–3 words, ≤ 16 chars
   cutaway?: {                                  // plan 2
     source: { kind: "ai_broll"; prompt: string; media: "image" | "video" } | { kind: "ai_self"; prompt: string; media: "image" | "video" }
           | { kind: "upload"; assetId: string }   // one of source.extras
@@ -113,6 +116,7 @@ Beat {
   - each beat's transcript text, with the red word highlighted
   - a keep toggle, with the drop reason when Claude dropped the beat
   - a cutaway card with its prompt or file, layout and credit cost
+  - a callout field (text, and a remove button) *(look pass)*
 - **Settings:** background, music, sound effects and ending.
 - **Estimate:** length against target, with a warning when over, plus total credits.
 - **Approve.**
@@ -157,7 +161,8 @@ Edits save as a new version. A **Re-plan** button reruns `plan_footage` with an 
 ### 4.3 Plan job (`plan_footage`)
 - **Beat splitting (code).** Beats are split at sentence-ending punctuation and at pauses of 600 ms or more. A beat over 10 s is split at its longest internal pause. A beat under 1.2 s merges with its neighbour.
 - **Claude's input:** the beats with their text and word indices, the target length, the user's notes and CTA keyword, the house-style rules, and the cutaway budget.
-- **Cutaway budget (plan 2), per target length T seconds:** at most `round(T/5)` cutaways, `floor(T/15)` of them video; `ai_self` only with a character, at most `max(1, floor(T/20))`. Code enforces it after Claude (drops extras in beat order, turns surplus clips into stills) and adds warnings.
+- **Cutaway budget (plan 2, raised by the look pass), per target length T seconds:** at most `round(T/3)` cutaways (about one every 3 s), `floor(T/7.5)` of them video (30 s: 10 cutaways, 4 clips); `ai_self` only with a character, at most `max(1, floor(T/20))`. Claude is told to plan close to the maximum (the first real reel used 5 of 6). Code enforces it after Claude (drops extras in beat order, turns surplus clips into stills) and adds warnings. *(Was `round(T/5)` and `floor(T/15)`.)*
+- **Callout budget (look pass):** at most `floor(T/5)` callouts; code removes extras in beat order with a warning, and removes a callout over 16 characters or 3 words with a warning (no repair round).
 - **Claude's output:** the draft edit plan, then code validates it as in §3.
 - **Language check:** a mismatch between the selected and detected language adds a warning to the plan. It does not fail the job.
 
@@ -191,6 +196,12 @@ Edits save as a new version. A **Re-plan** button reruns `plan_footage` with an 
    - Each cutaway is placed at `beat start + atMs` for `durationMs`, clipped to the beat.
    - `full`: replaces the speaker picture; the speaker's audio continues.
    - `split`: the cutaway fills the top half. The speaker is cropped 9:8 around the face into the bottom half, with the seam at y = 0.50 (ref).
+   - **Transitions (look pass, replacing hard cuts):**
+     - Full cutaways alternate a whip (a slide moving forward in reading order, with blur) and a zoom blur (in from 1.25×, out to 1.15× with a fade).
+     - Split cutaways slide down from the top and back up.
+     - Entry is 6 frames and exit 5, inside the cutaway's own frames, so no timing changes.
+     - The B-roll opening cuts in at frame 0.
+     - A cutaway followed by another within 6 frames leaves with a cut, so the speaker never flickers between them.
 5. **Hard rules**, applied in reel order:
    - Cutaways never overlap.
    - Cutaways never run under the CTA card.
@@ -199,10 +210,17 @@ Edits save as a new version. A **Re-plan** button reruns `plan_footage` with an 
    - Any cutaway that breaks a rule is trimmed. If it ends up under 1 s, it is dropped. Every trim or drop adds a warning, shown on the review page and as a generation note.
 6. **Captions.**
    - Pages of about 3 words and at most 22 characters, breaking at punctuation first. Each page shows from its first word's start to the next page's start.
-   - The `emphasisWordIdx` word is rendered red, and the emoji goes at the end of its page's line.
+   - The `emphasisWordIdx` word is rendered white on a red capsule *(look pass)*, and the emoji goes at the end of its page's line.
    - Times are remapped from source time to reel time, so captions stay in sync after cuts.
    - **Placement (tuned in plan 2 after the first real reel):** each page sits below the face: on-screen chin + 3% + 2.8% (half the pill), clamped to 55–72% of the height, constant within a page, kept from the previous page when it would move less than 3%. A page with no face keeps the previous position (60% when the reel has no face at all). Pages over a split cutaway sit on the seam (50%).
    - Pills are hidden while the hook headline or the CTA card is on screen; a page left with fewer than 8 visible frames is dropped (the SRT keeps every page).
+   - **Callouts (look pass).**
+     - Timing comes from the plan alone, so the review page shows the same warnings: the first free stretch of the beat of at least 0.8 s, shown for at most 1.6 s.
+     - Not free: the hook headline, the CTA card, and every placed cutaway plus 6 frames after it.
+     - No free stretch: dropped, with a warning.
+     - Position: centred just above the on-screen face when its top edge stays below the 9 % top safe area; otherwise in the top band on the side with room beside the face; otherwise left out, with a generation note. With no face, centred at 20 %.
+     - Captions sit below the face, so callouts never meet them.
+     - Pattern breaks never start during a callout.
 7. **Hook.**
    - The headline shows over 0–2 s, word by word.
    - The pattern break happens at frame 0:
@@ -218,7 +236,7 @@ Edits save as a new version. A **Re-plan** button reruns `plan_footage` with an 
    - Voice is normalised to −14 LUFS.
    - Music sits 12 dB under the voice as a fixed bed (ref: 10–15 dB under). Sidechain ducking is not needed.
    - Sound-effect cues follow the `sfx` level:
-     - `subtle`: a whoosh on the hook and on full cutaways, and a pop on headline words and the CTA keyword
+     - `subtle`: a whoosh on the hook and on every cutaway that enters with a transition (−14 dB; look pass, was full cutaways only), and a pop on headline words, callouts (look pass) and the CTA keyword
      - `lively`: subtle, plus a soft tick on every zoom change
      - `off`: no effects
 10. **Estimate.** Duration is the sum of shot lengths plus the CTA card. Credits are summed from per-model costs in the existing `cost.ts`.
@@ -231,14 +249,16 @@ All values sit in one `houseStyle` config in `@reel/video`. Tuning the look mean
 
 | Component | Spec |
 |---|---|
-| `PillCaptions` (caption preset `pill`, default for footage) | Black Heebo 800 text in a white rounded pill. Placed per page below the face (§5.6; 45% when a page has no position, ref 43–50%). Max 22 chars per line. Red emphasis `#E5262A`. Each page pops in from 80% to 100% with a slight overshoot over 6 frames. The spoken word pops 1.12 → 1 over 3 frames on a `#FEE80A` marker (an addition: the references have no active-word highlight). The emoji pops 0 → 1.35 → 1 over 8 frames when the page's last word is spoken. Rendered above the clips and cutaways so it survives cuts, but hidden under the hook headline and the CTA card (§5.6). |
+| `PillCaptions` (caption preset `pill`, default for footage) | *Look pass:* iOS glass pill: dark frosted glass (`rgba(22,22,24,0.62)`, backdrop blur 28 px), radius 48 px, white Heebo 600 text at 64 px. The spoken word turns iOS red `#FF3B30` and pulses 1 → 1.08 → 1. The emphasis word is white on a red capsule. White text stays ≥ 4.5:1 over any flat frame. No yellow or orange. Placed per page below the face (§5.6; 45 % when a page has no position, ref 43–50 %). Max 22 chars per line. Each page pops 85 % → 100 % with a slight overshoot over 6 frames and fades in. The emoji pops 0 → 1.35 → 1 over 8 frames when the page's last word is spoken. Rendered above the clips, cutaways and callouts, but hidden under the hook headline and the CTA card (§5.6). *(Was black text in a white pill with a `#FEE80A` marker.)* |
 | `SpeakerShot` | Working copy (or speaker plate) segment with a face-centred zoom and the optional push-in. |
 | `SplitLayout` | Cutaway in the top half; speaker cropped 9:8 in the bottom half; captions on the seam. |
-| `Cutaway` | Video or still. Stills get a gentle Ken Burns zoom (+6%). Hard cut in and out. |
-| `HookHeadline` | Small white line, then a huge yellow (`#FEE80A`, ref) word or words, popping in word by word. Heavy weight with a soft shadow. |
+| `Cutaway` | Video or still. *Look pass:* stills zoom +12 % (ease-out) and drift 3 % in a direction that changes per still (right, up, left, down), clamped so no edge shows. A misfit upload's blurred fill drifts the other way (parallax). Whip, zoom or slide transitions in and out (§5.4). |
+| `HookHeadline` | *Look pass:* the small line in white on the caption glass, then the big word or words in white Heebo 800 on a red `#FF3B30` sticker (radius 36, tilted −2°), popping in word by word. *(Was a huge yellow `#FEE80A` word.)* |
 | `PatternBreak` | `zoom_hit`, `flash` or `broll` at frame 0, plus the recurring breaks, as described in §5.7. Zoom hits and zoom blurs live on the speaker clips; this layer draws the flashes. |
-| `CtaCard` | "תכתבו '<KEYWORD>' בתגובות" ("write '<KEYWORD>' in the comments") with a huge quoted keyword. English: "Comment '<KEYWORD>'". |
-| `DiagramCard` (plan 2) | White line art on near-black or violet. Templates: `compare` (2 boxes), `list` (up to 4 items), `flow` (2–3 steps stacked top to bottom with down arrows, so 40-character Hebrew steps fit the width). Icons from Lucide. |
+| `CtaCard` | "תכתבו '<KEYWORD>' בתגובות" ("write '<KEYWORD>' in the comments") with a huge quoted keyword. English: "Comment '<KEYWORD>'". *Look pass:* white lines, with the keyword in white on the red sticker (no yellow). |
+| `DiagramCard` (plan 2) | *Look pass:* an iOS card: white, radius 56, on `#F2F2F7`, filling its slot (no empty dark area). Items spring in staggered. `compare`: 2 grey tiles and a red VS badge. `list` (up to 4 items): rows with a red check circle that draws itself. `flow` (2–3 steps, top to bottom, so 40-character Hebrew steps fit the width): numbered red circles joined by a red line that draws downward. Long items shrink. *(Was white line art on near-black with violet waves.)* |
+| `Callouts` (look pass) | A white sticker badge with red Heebo 800 text at 52 px, tilted −4°. It springs in and shrinks out, placed per §5.6. |
+| `ProgressBar` (look pass) | 8 px red bar along the top edge of footage reels, filling from the reading-start side. |
 
 English reels use the same components. RTL and LTR handling follows the existing captions code.
 
@@ -321,6 +341,7 @@ English reels use the same components. RTL and LTR handling follows the existing
   - **Render tests:** one per new component, with stored snapshot frames.
   - **`face-helper` tests:** it finds the face on the fixture, and (plan 3) the mask covers it.
 - **Fake worker:** fake Scribe, Music and sound-effect providers make the whole flow (upload → plan → approve → render) free to click through.
+- **Look preview (look pass):** `npm run preview:look` renders stills and a contact sheet of the whole look from a sample timeline. No keys, no cost.
 - **Paid smoke tests, only with the user's explicit OK and with the cost stated first:** one real run per plan on a user clip.
 - **Per plan:**
   - per-task review and a whole-branch review
@@ -336,3 +357,25 @@ English reels use the same components. RTL and LTR handling follows the existing
 - **Soul ID costs and consistency** for `ai_self` cutaways are verified in the plan 2 paid smoke test.
 - **Unknown creators for references R3–R6** (ref). This doesn't affect the design.
 - **Licensing:** the user uploads the team music library and is responsible for its rights. AI music and sound effects are generated under the team's ElevenLabs plan.
+
+## 11. Amendment 2026-10-13: look pass (plan 2b)
+
+**What the user said** after the first real reel with cutaways, which had white caption pills with a yellow word, a dark and mostly empty diagram card, still B-roll with hard cuts, and the speaker on their own background:
+> "much better, but missing a background for the person, more graphic motion and animation, captions with better font and less orange color, white and red colors, the captions need to look more like iOS app design, more B-rolls."
+
+The background is plan 3. The rest is decided as follows. The values live in `houseStyle` and `EditStyle`.
+
+1. **Captions:**
+   - An iOS glass pill with white Heebo 600 text, the spoken word in iOS red `#FF3B30` popping 1 → 1.08, and Claude's emphasis word white on a red capsule.
+   - No yellow or orange anywhere.
+   - The hook headline and the CTA match: white text, with the big words on a red sticker.
+   - Placement rules are unchanged.
+2. **B-roll density:** about one cutaway every 3 s (`round(T/3)`), one clip every 7.5 s (`floor(T/7.5)`). Claude is told to plan close to the maximum. Prices and the spend cap are unchanged.
+3. **Motion graphics:**
+   - iOS diagram cards that fill their slot, with springs and drawn icons.
+   - Whip, zoom and slide transitions into and out of cutaways, with whooshes.
+   - Ken Burns zoom plus drift on stills.
+   - Keyword callouts (a new `Beat.callout`, at most one per 5 s, never over the face, never with a cutaway, the headline or the CTA card).
+   - A thin red progress bar.
+   - Effects never stack on one moment: pattern breaks keep off callouts and cutaways, and back-to-back cutaways leave with a cut.
+
