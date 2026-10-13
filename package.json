@@ -14,6 +14,7 @@
     "smoke:higgsfield": "tsx packages/engine/scripts/smoke-higgsfield.ts",
     "sfx:generate": "tsx packages/engine/scripts/generate-sfx.ts",
     "build:face-helper": "swift build -c release --package-path tools/face-helper",
+    "build:segment-helper": "swift build -c release --package-path tools/segment-helper",
     "smoke:elevenlabs": "tsx packages/engine/scripts/smoke-elevenlabs.ts",
     "worker": "tsx apps/worker/src/main.ts",
     "worker:fake": "tsx apps/worker/src/main.ts --fake",
