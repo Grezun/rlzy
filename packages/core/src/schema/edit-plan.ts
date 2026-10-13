@@ -161,12 +161,12 @@ export const NO_CUTAWAY: DraftCutaway = { kind: "none", media: "image", prompt: 
 
 /**
  * What Claude writes. Free of min/max constraints (structured outputs don't enforce them); empty strings and -1 mean
- * "none". emphasisWordIdx is a plain number (z.number().int() would emit safe-integer bounds); parseEditPlan checks it
+ * "none" (callout: "" for none). emphasisWordIdx is a plain number (z.number().int() would emit safe-integer bounds); parseEditPlan checks it
  * is an integer. uploadId is the x1…x6 id from the prompt; code maps it to the asset. Code fills in the beat spans, source, estimate and warnings, then validates with parseEditPlan.
  */
 export const EditPlanDraftSchema = z.object({
   title: z.string(),
-  beats: z.array(z.object({ id: z.string(), keep: z.boolean(), dropReason: z.string(), emphasisWordIdx: z.number(), emoji: z.string(), cutaway: DraftCutawaySchema })),
+  beats: z.array(z.object({ id: z.string(), keep: z.boolean(), dropReason: z.string(), emphasisWordIdx: z.number(), emoji: z.string(), cutaway: DraftCutawaySchema, callout: z.string() })),
   hook: z.object({
     coldOpenBeatId: z.string(),
     headlineSmall: z.string(),

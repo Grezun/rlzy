@@ -1,4 +1,4 @@
-import { compileFootage, estimateFootageCost, estimateReelSeconds, musicBillSeconds, planCutaways, SFX_NAMES, type EditPlan, type EditStyle, type PipelineEvent, type SfxName, type Timeline } from "@reel/core";
+import { compileFootage, estimateFootageCost, estimateReelSeconds, musicBillSeconds, planCallouts, planCutaways, SFX_NAMES, type EditPlan, type EditStyle, type PipelineEvent, type SfxName, type Timeline } from "@reel/core";
 import { concatAudioSegments, fitMusic, makeSfxPlaceholders, normalizeLoudness, sha256File, SOCIAL_LOUDNESS } from "@reel/media";
 import { missingSfx, SFX_DIR, sfxFileIn } from "@reel/video/sfx";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -104,9 +104,12 @@ export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps
   emit({ type: "step", step: "visuals", status: "running" });
   const { placed, warnings: placementNotes } = planCutaways(plan, inputs.transcript.words, deps.style);
   // Spec §5.5: every trim or drop is also a generation note (the review page showed the same lines before approval).
-  notes.push(...placementNotes);
+  notes.push(...placementNotes, ...planCallouts(plan, inputs.transcript.words, deps.style).warnings);
   const cut = await generateCutaways(placed, plan, { image: deps.image, video: deps.video, uploader: deps.uploader, store, tmpDir: join(deps.tmpDir, "cutaways"), log, character: deps.character, budget });
   notes.push(...cut.notes);
+  // Callouts with no room beside the face: needs the face track and the cutaways that were actually made.
+  const made = Object.fromEntries(Object.entries(cut.assets).map(([id, c]) => [id, { kind: c.kind, src: "draft" }]));
+  notes.push(...compileFootage(plan, inputs.transcript, inputs.faceTrack, { videoSrc: "draft", sfx: {}, cutaways: made }, deps.style).notes);
   emit({ type: "step", step: "visuals", status: "done" });
 
   const sfx: Partial<Record<SfxName, StoredAsset>> = {};

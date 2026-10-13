@@ -119,7 +119,7 @@ export function createFakeProviders(opts: { workDir: string; failPromptsContaini
         : { ...NO_CUTAWAY, items: [] };
       const draft: EditPlanDraft = {
         title: he ? "עריכה לדוגמה" : "Sample edit",
-        beats: ids.map((id, i) => ({ id, keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "", cutaway: cutawayFor(i) })),
+        beats: ids.map((id, i) => ({ id, keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "", cutaway: cutawayFor(i), callout: "" })),
         hook: { coldOpenBeatId: "", headlineSmall: he ? "הטריק ש" : "The trick that", headlineBig: he ? "חוסך שעות" : "saves hours", patternBreak: "zoom_hit", reason: "Fake planner: a headline and a punch-in." },
         ending: { kind: keyword ? "cta" : "loop", keyword: keyword ?? "" },
         music: trackId ? { kind: "library", trackId, prompt: "" } : { kind: "ai", trackId: "", prompt: "calm lo-fi beat" },

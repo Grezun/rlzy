@@ -74,6 +74,9 @@ describe("cutaways (plan 2)", () => {
 });
 
 describe("Claude's draft schema", () => {
+  it("offers a callout per beat", () => {
+    expect(JSON.stringify(EditPlanDraftSchema.toJSONSchema())).toMatch(/"callout"/);
+  });
   it("offers cutaways and the B-roll break but never background replacement", () => {
     const json = JSON.stringify(EditPlanDraftSchema.toJSONSchema());
     expect(json).toMatch(/cutaway/);

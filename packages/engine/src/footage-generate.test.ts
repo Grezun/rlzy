@@ -89,6 +89,14 @@ describe("generateFootageAssets + renderFootage (fake music, placeholder sfx, re
     expect(providers.calls.image).toBe(1);
   }, 900_000);
 
+  it("notes a callout that can't show (its beat runs under the CTA card)", async () => {
+    const { plan: p, deps } = await prepared();
+    const last = p.beats.filter((b) => b.keep).at(-1)!.id;
+    const plan = parseEditPlan({ ...p, beats: p.beats.map((b) => (b.id === last ? { ...b, callout: { text: "AI" } } : b)) });
+    const gen = await generateFootageAssets(plan, deps);
+    expect(gen.notes).toContain(`The callout in ${last} was dropped: the hook headline, a cutaway or the CTA card covers its beat.`);
+  }, 300_000);
+
   it("adds the placement warnings to the generation notes, before paying for anything", async () => {
     const { plan: p, deps, providers } = await prepared();
     const cut = { source: { kind: "ai_broll" as const, prompt: "laptop", media: "image" as const }, layout: "full" as const, atMs: 0, durationMs: 1000 };

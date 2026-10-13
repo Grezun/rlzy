@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import {
-  EditPlanDraftSchema, LENGTH_TOLERANCE, applyCutawayBudget, cutawayBudget, parseEditPlan, plural, splitBeats, withFootageEstimate,
+  CALLOUT_MAX_CHARS, CalloutSchema, EditPlanDraftSchema, LENGTH_TOLERANCE, applyCalloutBudget, applyCutawayBudget, calloutBudget, cutawayBudget, parseEditPlan, plural, splitBeats, withFootageEstimate,
   type BeatSpan, type Cutaway, type DraftCutaway, type EditPlan, type EditPlanDraft, type EditStyle, type FootageExtra, type FootageSettings, type FootageSource, type MusicMood, type Transcript,
 } from "@reel/core";
 
@@ -59,6 +59,7 @@ export function footageSystemPrompt(): string {
     "  - reason: one sentence explaining the hook, shown to the user.",
     "- emphasisWordIdx: in about one beat in three, the index of its single most important word (shown in red). -1 for none.",
     "- emoji: in about one beat in four: 👆 or 👇 when the speaker points, or one emoji that fits the line (it pops in when the line ends). Empty otherwise.",
+    `- callout: in a few beats, a short sticker that springs in above the speaker: a number from the talk ("1/5", "3x", "90%") or 1–3 key words (at most ${CALLOUT_MAX_CHARS} characters), in the reel's language, where that number or phrase is said. Stay inside the callout budget; not on the first beat (the headline covers it) or the last (the CTA card covers it). Empty otherwise.`,
     '- ending: "cta" when there is a comment keyword (the user gave one, or the speaker asks viewers to comment a word: put that word in keyword); "loop" when the last line can flow back into the first; otherwise "none".',
     '- music: a library track whose mood fits (kind "library", trackId); "ai" with a short English instrumental prompt (genre, mood, tempo) only when no library track fits; "none" for serious or emotional talks.',
     '- sfx: "subtle" by default, "lively" for energetic tips, "off" for serious topics.',
@@ -101,6 +102,7 @@ export function footageUserPrompt(req: FootagePlanRequest, beats: BeatSpan[]): s
     ...(req.settings.notes ? [`Notes from the user: ${req.settings.notes}`] : []),
     "Background replacement is not available in this version: never mention it.",
     cutawayBudgetLine(req),
+    `Callout budget: at most ${plural(calloutBudget(req.settings.targetDurationSec), "callout", "callouts")}.`,
     ...uploadLines(req.source.extras),
     req.library.length ? "Music library:" : "Music library: empty.",
     ...req.library.map((t) => `- ${t.id} "${t.title}" (${t.mood}, ${Math.round(t.durationSec)} s)`),
@@ -151,19 +153,25 @@ export function buildEditPlan(draft: EditPlanDraft, req: FootagePlanRequest, bea
   if (m.kind === "library" && !req.library.some((t) => t.id === m.trackId)) {
     throw new Error(`music.trackId "${m.trackId}" is not in the library. Use a listed id, or "ai" or "none".`);
   }
+  const calloutWarnings: string[] = [];
   const withCutaways = beats.map((b) => {
     const d = byId.get(b.id)!;
     const cutaway = draftCutaway(b.id, d.cutaway, req);
+    const text = d.callout.trim();
+    const callout = text && CalloutSchema.safeParse({ text }).success ? { text } : undefined;
+    if (text && !callout) calloutWarnings.push(`The callout in ${b.id} ("${text}") was removed: a callout is a number or 1–3 words, at most ${CALLOUT_MAX_CHARS} characters.`);
     return {
       id: b.id, startWordIdx: b.startWordIdx, endWordIdx: b.endWordIdx, keep: d.keep,
       ...(!d.keep && d.dropReason.trim() ? { dropReason: d.dropReason.trim().slice(0, 200) } : {}),
       ...(d.emphasisWordIdx >= 0 ? { emphasisWordIdx: d.emphasisWordIdx } : {}),
       ...(d.emoji.trim() ? { emoji: d.emoji.trim() } : {}),
       ...(cutaway ? { cutaway } : {}),
+      ...(callout ? { callout } : {}),
     };
   });
   const budgeted = applyCutawayBudget(withCutaways, cutawayBudget(req.settings.targetDurationSec, !!req.character), req.settings.targetDurationSec);
-  const brollLeft = budgeted.beats.some((b) => b.keep && b.cutaway);
+  const withCallouts = applyCalloutBudget(budgeted.beats, calloutBudget(req.settings.targetDurationSec), req.settings.targetDurationSec);
+  const brollLeft = withCallouts.beats.some((b) => b.keep && b.cutaway);
   const brollLost = draft.hook.patternBreak === "broll" && !brollLeft;
   const patternBreak = brollLost ? "zoom_hit" : draft.hook.patternBreak;
   const plan = {
@@ -173,7 +181,7 @@ export function buildEditPlan(draft: EditPlanDraft, req: FootagePlanRequest, bea
     language: req.settings.language,
     targetDurationSec: req.settings.targetDurationSec,
     source: req.source,
-    beats: budgeted.beats,
+    beats: withCallouts.beats,
     hook: {
       ...(draft.hook.coldOpenBeatId.trim() ? { coldOpenBeatId: draft.hook.coldOpenBeatId.trim() } : {}),
       ...(draft.hook.headlineBig.trim() ? { headline: { small: draft.hook.headlineSmall.trim(), big: draft.hook.headlineBig.trim() } } : {}),
@@ -189,7 +197,7 @@ export function buildEditPlan(draft: EditPlanDraft, req: FootagePlanRequest, bea
     sfx: draft.sfx,
     estimate: { durationSec: 0, credits: 0 },
     ...(req.character ? { character: req.character } : {}),
-    warnings: [...req.warnings, ...budgeted.warnings, ...(brollLost ? ["The B-roll opening had no cutaway left, so it became a zoom hit."] : [])],
+    warnings: [...req.warnings, ...budgeted.warnings, ...calloutWarnings, ...withCallouts.warnings, ...(brollLost ? ["The B-roll opening had no cutaway left, so it became a zoom hit."] : [])],
   };
   return withFootageEstimate(parseEditPlan(plan), req.transcript.words, style);
 }
