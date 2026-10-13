@@ -3,7 +3,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { footageTranscript, validEditPlan } from "../../../core/src/testing/fixtures";
+import { EXTRA_IMG, fixtureExtras, footageTranscript, validEditPlan } from "../../../core/src/testing/fixtures";
 import { createFakeProviders } from "./fake";
 
 describe("fake footage providers", () => {
@@ -40,6 +40,19 @@ describe("fake footage providers", () => {
     expect(plan.ending).toEqual({ kind: "cta", keyword: "AI" });
     expect(plan.music.kind).toBe("ai");
     expect(p.calls.plan).toBe(1);
+    expect(plan.beats[0].cutaway?.source).toEqual({ kind: "diagram", template: "list", items: ["בלי עריכה", "בחינם"] });
+  });
+  it("puts an upload on the first beat and the diagram on the second when the user sent extras", async () => {
+    const p = createFakeProviders({ workDir: await mkdtemp(join(tmpdir(), "fake-plan-")) });
+    const plan = await p.footagePlanner.plan({
+      settings: { language: "he", targetDurationSec: 15, ctaKeyword: "AI" },
+      source: { ...validEditPlan().source, extras: fixtureExtras() },
+      transcript: footageTranscript(),
+      library: [],
+      warnings: [],
+    });
+    expect(plan.beats[0].cutaway?.source).toEqual({ kind: "upload", assetId: EXTRA_IMG });
+    expect(plan.beats[1].cutaway?.source.kind).toBe("diagram");
   });
 });
 

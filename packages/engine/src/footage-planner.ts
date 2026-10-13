@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import {
-  EditPlanDraftSchema, LENGTH_TOLERANCE, parseEditPlan, splitBeats, withFootageEstimate,
-  type BeatSpan, type EditPlan, type EditPlanDraft, type EditStyle, type FootageSettings, type FootageSource, type MusicMood, type Transcript,
+  EditPlanDraftSchema, LENGTH_TOLERANCE, applyCutawayBudget, cutawayBudget, parseEditPlan, splitBeats, withFootageEstimate,
+  type BeatSpan, type Cutaway, type DraftCutaway, type EditPlan, type EditPlanDraft, type EditStyle, type FootageExtra, type FootageSettings, type FootageSource, type MusicMood, type Transcript,
 } from "@reel/core";
 
 export type LibraryTrack = { id: string; title: string; mood: MusicMood; durationSec: number };
@@ -14,6 +14,7 @@ export type FootagePlanRequest = {
   warnings: string[];
   instruction?: string;
   previous?: EditPlan;
+  character?: { id: string; name: string };
 };
 export interface FootagePlanner {
   plan(req: FootagePlanRequest): Promise<EditPlan>;
@@ -54,7 +55,7 @@ export function footageSystemPrompt(): string {
     "- The hook is the first 3 seconds. Combine:",
     "  - coldOpenBeatId: the single most surprising or valuable line, played first and not repeated later. Empty when the first kept beat already hooks.",
     "  - headlineSmall + headlineBig: a small white line (at most 5 words) and a huge yellow word or two (at most 12 characters), in the reel's language. Both empty for no headline.",
-    '  - patternBreak: "zoom_hit" (a fast punch-in), "flash" (two white frames) or "none".',
+    '  - patternBreak: "zoom_hit" (a fast punch-in), "flash" (two white frames), "broll" (your first cutaway opens the reel, full screen, for 1 s: only when it is a strong visual hook) or "none".',
     "  - reason: one sentence explaining the hook, shown to the user.",
     "- emphasisWordIdx: in about one beat in three, the index of its single most important word (shown in red). -1 for none.",
     "- emoji: in about one beat in four: 👆 or 👇 when the speaker points, or one emoji that fits the line (it pops in when the line ends). Empty otherwise.",
@@ -62,12 +63,32 @@ export function footageSystemPrompt(): string {
     '- music: a library track whose mood fits (kind "library", trackId); "ai" with a short English instrumental prompt (genre, mood, tempo) only when no library track fits; "none" for serious or emotional talks.',
     '- sfx: "subtle" by default, "lively" for energetic tips, "off" for serious topics.',
     "- dropReason: for every dropped beat, a short English reason (\"retake of b4\", \"false start\", \"tangent\").",
+    "- cutaway: at most one per beat, kind \"none\" for most beats; stay inside the cutaway budget. Show what the words talk about, 1–3 s (durationMs 1000–3000), starting atMs after the beat starts, counted after pauses are cut; keep atMs + durationMs inside the beat.",
+    '  - "ai_broll": a concrete thing or action the beat names. prompt: one English sentence for a realistic photo (subject, setting, light); never text, screens with words, or logos. media "video" only when the motion matters, otherwise "image".',
+    '  - "ai_self": the speaker doing what the beat describes (only when a character is available). prompt in English, calling them "the person".',
+    '  - "upload": one of the user\'s uploads whose label fits the beat; uploadId is its x1…x6 id.',
+    '  - "diagram": a comparison (template "compare", exactly 2 items), a short list ("list", 2–4 items) or steps ("flow", 2–3 items); items are 1–4 words in the reel\'s language.',
+    '  - layout "split" (cutaway on top, speaker below) when the speaker\'s face matters; "full" for punchy visuals.',
     "- Return every beat id exactly once, in the given order.",
   ].join("\n");
 }
 
 const sec = (ms: number) => (ms / 1000).toFixed(1);
 const LANGUAGE = { he: "Hebrew", en: "English" } as const;
+
+function cutawayBudgetLine(req: FootagePlanRequest): string {
+  const b = cutawayBudget(req.settings.targetDurationSec, !!req.character);
+  const self = req.character ? `at most ${b.maxSelf} AI shots of the speaker (character "${req.character.name}").` : "no AI shots of the speaker (no character).";
+  return `Cutaway budget: at most ${b.max} cutaways (at most ${b.maxVideo} video clips); ${self}`;
+}
+
+function uploadLines(extras: FootageExtra[]): string[] {
+  if (!extras.length) return ["Uploads from the user: none."];
+  return [
+    'Uploads from the user (cutaway kind "upload"):',
+    ...extras.map((e, i) => `- x${i + 1} (${e.kind === "image" ? "photo" : `clip, ${(e.durationMs / 1000).toFixed(1)} s`}, ${e.width > e.height ? "landscape" : "portrait"}) "${e.label}"`),
+  ];
+}
 
 export function footageUserPrompt(req: FootagePlanRequest, beats: BeatSpan[]): string {
   const w = req.transcript.words;
@@ -78,7 +99,9 @@ export function footageUserPrompt(req: FootagePlanRequest, beats: BeatSpan[]): s
       ? `Comment keyword from the user: "${req.settings.ctaKeyword}" (use ending "cta").`
       : 'No comment keyword was given: use "cta" only if the speaker asks viewers to comment a specific word, and put that word in ending.keyword.',
     ...(req.settings.notes ? [`Notes from the user: ${req.settings.notes}`] : []),
-    "Cutaways, B-roll and background replacement are not available in this version: never mention them.",
+    "Background replacement is not available in this version: never mention it.",
+    cutawayBudgetLine(req),
+    ...uploadLines(req.source.extras),
     req.library.length ? "Music library:" : "Music library: empty.",
     ...req.library.map((t) => `- ${t.id} "${t.title}" (${t.mood}, ${Math.round(t.durationSec)} s)`),
     "",
@@ -95,6 +118,25 @@ export function footageUserPrompt(req: FootagePlanRequest, beats: BeatSpan[]): s
   return lines.join("\n");
 }
 
+/** Claude's flat draft cutaway → a schema cutaway (timing clamped to 1–3 s; upload ids x1…x6 mapped to the asset). */
+export function draftCutaway(beatId: string, c: DraftCutaway, req: FootagePlanRequest): Cutaway | undefined {
+  if (c.kind === "none") return undefined;
+  const timing = { layout: c.layout, atMs: Math.max(0, Math.round(c.atMs)), durationMs: Math.min(3000, Math.max(1000, Math.round(c.durationMs))) };
+  switch (c.kind) {
+    case "ai_broll":
+    case "ai_self":
+      return { source: { kind: c.kind, prompt: c.prompt.trim(), media: c.media }, ...timing };
+    case "upload": {
+      const n = /^x([1-6])$/.exec(c.uploadId.trim())?.[1];
+      const extra = n ? req.source.extras[Number(n) - 1] : undefined;
+      if (!extra) throw new Error(`Beat ${beatId}: uploadId "${c.uploadId}" is not one of the uploads. Use a listed id, or another cutaway kind.`);
+      return { source: { kind: "upload", assetId: extra.assetId }, ...timing };
+    }
+    case "diagram":
+      return { source: { kind: "diagram", template: c.template, items: c.items.map((t) => t.trim()).filter(Boolean).slice(0, 4) }, ...timing };
+  }
+}
+
 /** Fills in what code owns (beat spans, source, keyword, estimate, warnings) and validates with parseEditPlan. Throws a repair-ready message. */
 export function buildEditPlan(draft: EditPlanDraft, req: FootagePlanRequest, beats: BeatSpan[], style: EditStyle): EditPlan {
   const byId = new Map(draft.beats.map((b) => [b.id, b]));
@@ -109,6 +151,21 @@ export function buildEditPlan(draft: EditPlanDraft, req: FootagePlanRequest, bea
   if (m.kind === "library" && !req.library.some((t) => t.id === m.trackId)) {
     throw new Error(`music.trackId "${m.trackId}" is not in the library. Use a listed id, or "ai" or "none".`);
   }
+  const withCutaways = beats.map((b) => {
+    const d = byId.get(b.id)!;
+    const cutaway = draftCutaway(b.id, d.cutaway, req);
+    return {
+      id: b.id, startWordIdx: b.startWordIdx, endWordIdx: b.endWordIdx, keep: d.keep,
+      ...(!d.keep && d.dropReason.trim() ? { dropReason: d.dropReason.trim().slice(0, 200) } : {}),
+      ...(d.emphasisWordIdx >= 0 ? { emphasisWordIdx: d.emphasisWordIdx } : {}),
+      ...(d.emoji.trim() ? { emoji: d.emoji.trim() } : {}),
+      ...(cutaway ? { cutaway } : {}),
+    };
+  });
+  const budgeted = applyCutawayBudget(withCutaways, cutawayBudget(req.settings.targetDurationSec, !!req.character), req.settings.targetDurationSec);
+  const brollLeft = budgeted.beats.some((b) => b.keep && b.cutaway);
+  const brollLost = draft.hook.patternBreak === "broll" && !brollLeft;
+  const patternBreak = brollLost ? "zoom_hit" : draft.hook.patternBreak;
   const plan = {
     format: "footage",
     version: 1,
@@ -116,19 +173,11 @@ export function buildEditPlan(draft: EditPlanDraft, req: FootagePlanRequest, bea
     language: req.settings.language,
     targetDurationSec: req.settings.targetDurationSec,
     source: req.source,
-    beats: beats.map((b) => {
-      const d = byId.get(b.id)!;
-      return {
-        id: b.id, startWordIdx: b.startWordIdx, endWordIdx: b.endWordIdx, keep: d.keep,
-        ...(!d.keep && d.dropReason.trim() ? { dropReason: d.dropReason.trim().slice(0, 200) } : {}),
-        ...(d.emphasisWordIdx >= 0 ? { emphasisWordIdx: d.emphasisWordIdx } : {}),
-        ...(d.emoji.trim() ? { emoji: d.emoji.trim() } : {}),
-      };
-    }),
+    beats: budgeted.beats,
     hook: {
       ...(draft.hook.coldOpenBeatId.trim() ? { coldOpenBeatId: draft.hook.coldOpenBeatId.trim() } : {}),
       ...(draft.hook.headlineBig.trim() ? { headline: { small: draft.hook.headlineSmall.trim(), big: draft.hook.headlineBig.trim() } } : {}),
-      patternBreak: draft.hook.patternBreak,
+      patternBreak,
       reason: draft.hook.reason.trim().slice(0, 300),
     },
     // The user's keyword is owned by code: when set, the reel always ends on that CTA.
@@ -139,7 +188,8 @@ export function buildEditPlan(draft: EditPlanDraft, req: FootagePlanRequest, bea
     music: m.kind === "library" ? { kind: "library", assetId: m.trackId } : m.kind === "ai" ? { kind: "ai", prompt: m.prompt.trim() } : { kind: "none" },
     sfx: draft.sfx,
     estimate: { durationSec: 0, credits: 0 },
-    warnings: req.warnings,
+    ...(req.character ? { character: req.character } : {}),
+    warnings: [...req.warnings, ...budgeted.warnings, ...(brollLost ? ["The B-roll opening had no cutaway left, so it became a zoom hit."] : [])],
   };
   return withFootageEstimate(parseEditPlan(plan), req.transcript.words, style);
 }

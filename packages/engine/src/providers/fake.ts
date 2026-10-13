@@ -1,4 +1,4 @@
-import { NO_CUTAWAY, PermanentProviderError, type EditPlanDraft } from "@reel/core";
+import { NO_CUTAWAY, PermanentProviderError, type DraftCutaway, type EditPlanDraft } from "@reel/core";
 import { houseStyle } from "@reel/video/house-style";
 import { makeTestImage, makeTestTone, makeTestVideo, probe } from "@reel/media";
 import { readFile } from "node:fs/promises";
@@ -109,9 +109,17 @@ export function createFakeProviders(opts: { workDir: string; failPromptsContaini
       const he = /Reel language: Hebrew/.test(user);
       const keyword = user.match(/Comment keyword from the user: "([^"]+)"/)?.[1];
       const trackId = user.match(/^- ([0-9a-f-]{36}) "/m)?.[1];
+      const hasUpload = /^- x1 \(/m.test(user);
+      const diagram: DraftCutaway = { ...NO_CUTAWAY, kind: "diagram", template: "list", items: he ? ["בלי עריכה", "בחינם"] : ["No editing", "Free"], layout: "split", atMs: 0, durationMs: 1200 };
+      // The diagram goes on the first beat unless an upload takes it: the 6 s test videos' second beat starts 0.3 s
+      // before the CTA card, where placement would drop it with a note.
+      const cutawayFor = (i: number): DraftCutaway =>
+        i === 0 ? (hasUpload ? { ...NO_CUTAWAY, kind: "upload", uploadId: "x1", atMs: 0, durationMs: 1000 } : { ...diagram, items: [...diagram.items] })
+        : i === 1 && hasUpload ? { ...diagram, items: [...diagram.items] }
+        : { ...NO_CUTAWAY, items: [] };
       const draft: EditPlanDraft = {
         title: he ? "עריכה לדוגמה" : "Sample edit",
-        beats: ids.map((id) => ({ id, keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "", cutaway: NO_CUTAWAY })),
+        beats: ids.map((id, i) => ({ id, keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "", cutaway: cutawayFor(i) })),
         hook: { coldOpenBeatId: "", headlineSmall: he ? "הטריק ש" : "The trick that", headlineBig: he ? "חוסך שעות" : "saves hours", patternBreak: "zoom_hit", reason: "Fake planner: a headline and a punch-in." },
         ending: { kind: keyword ? "cta" : "loop", keyword: keyword ?? "" },
         music: trackId ? { kind: "library", trackId, prompt: "" } : { kind: "ai", trackId: "", prompt: "calm lo-fi beat" },

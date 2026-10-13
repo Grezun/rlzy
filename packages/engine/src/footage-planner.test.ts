@@ -1,7 +1,7 @@
-import { NO_CUTAWAY, parseEditPlan, withFootageEstimate, type EditPlanDraft, type Transcript } from "@reel/core";
+import { NO_CUTAWAY, parseEditPlan, withFootageEstimate, type DraftCutaway, type EditPlanDraft, type Transcript } from "@reel/core";
 import { houseStyle } from "@reel/video/house-style";
 import { describe, expect, it, vi } from "vitest";
-import { footageTranscript, validEditPlan } from "../../core/src/testing/fixtures";
+import { CHARACTER_ID, EXTRA_VID, fixtureExtras, footageTranscript, validEditPlan } from "../../core/src/testing/fixtures";
 import { buildEditPlan, createFootagePlanner, footageUserPrompt, transcriptWarnings, type EditDraftModel, type FootagePlanRequest } from "./footage-planner";
 import { splitBeats } from "@reel/core";
 
@@ -59,14 +59,14 @@ describe("buildEditPlan", () => {
 });
 
 describe("footageUserPrompt", () => {
-  it("lists beats with word indices, the keyword, the library and plan-1 limits", () => {
+  it("lists beats with word indices, the keyword and the library", () => {
     const u = footageUserPrompt({ ...REQ, library: [{ id: TRACK, title: "Morning", mood: "calm", durationSec: 95 }], settings: { ...REQ.settings, notes: "קצר וקולע" } }, splitBeats(REQ.transcript.words));
     expect(u).toMatch(/Reel language: Hebrew\. Target length: 15 seconds\./);
     expect(u).toMatch(/b1 \(3\.5 s\): 0:היי 1:חברים, 2:אממ 3:היום/);
     expect(u).toMatch(/Comment keyword from the user: "AI"/);
     expect(u).toContain(`- ${TRACK} "Morning" (calm, 95 s)`);
     expect(u).toMatch(/Notes from the user: קצר וקולע/);
-    expect(u).toMatch(/Cutaways, B-roll and background replacement are not available/);
+    expect(u).toContain("Background replacement is not available in this version: never mention it.");
   });
   it("adds the previous plan and the instruction for a Re-plan", () => {
     const previous = parseEditPlan({ ...validEditPlan(), beats: validEditPlan().beats.map((b) => (b.id === "b2" ? { ...b, keep: false, dropReason: "tangent" } : b)) });
@@ -123,5 +123,45 @@ describe("transcriptWarnings", () => {
     expect(transcriptWarnings(en, REQ.settings, style)).toEqual(["You picked Hebrew, but the speech sounds like English. Captions follow what was said."]);
     const noisy = { ...footageTranscript(), words: footageTranscript().words.map((w) => ({ ...w, logprob: -1.5 })) };
     expect(transcriptWarnings(noisy, REQ.settings, style)).toEqual(["The audio sounds noisy or unclear, so some caption words may be wrong."]);
+  });
+});
+
+const RICH: FootagePlanRequest = { ...REQ, source: { ...REQ.source, extras: fixtureExtras() }, character: { id: CHARACTER_ID, name: "Alex" } };
+const withCuts = (cuts: Record<string, Partial<DraftCutaway>>, over: Partial<EditPlanDraft> = {}) =>
+  draft({ beats: draft().beats.map((b) => (cuts[b.id] ? { ...b, cutaway: { ...NO_CUTAWAY, ...cuts[b.id] } } : b)), ...over });
+
+describe("cutaways from Claude's draft", () => {
+  const beats = splitBeats(REQ.transcript.words);
+  it("maps every kind, clamps timing to 1–3 s and trims diagram items", () => {
+    const plan = buildEditPlan(withCuts({
+      b1: { kind: "ai_broll", media: "video", prompt: " laptop on a desk ", atMs: 200.4, durationMs: 5000 },
+      b2: { kind: "upload", uploadId: "x2", layout: "split", durationMs: 1500 },
+      b3: { kind: "diagram", template: "list", items: [" אחת ", "", "שתיים"], durationMs: 800 },
+    }), RICH, beats, style);
+    expect(plan.beats.map((b) => b.cutaway)).toEqual([
+      { source: { kind: "ai_broll", prompt: "laptop on a desk", media: "video" }, layout: "full", atMs: 200, durationMs: 3000 },
+      { source: { kind: "upload", assetId: EXTRA_VID }, layout: "split", atMs: 0, durationMs: 1500 },
+      { source: { kind: "diagram", template: "list", items: ["אחת", "שתיים"] }, layout: "full", atMs: 0, durationMs: 1000 },
+    ]);
+    expect(plan.character).toEqual({ id: CHARACTER_ID, name: "Alex" });
+    expect(plan.warnings).toEqual([]);
+  });
+  it("sends an unknown upload id back for repair", () => {
+    expect(() => buildEditPlan(withCuts({ b1: { kind: "upload", uploadId: "x9" } }), RICH, beats, style)).toThrow('Beat b1: uploadId "x9" is not one of the uploads. Use a listed id, or another cutaway kind.');
+  });
+  it("removes AI shots of you without a character, and a B-roll opening with no cutaway left becomes a zoom hit", () => {
+    const plan = buildEditPlan(withCuts({ b1: { kind: "ai_self", prompt: "the person on a plane" } }, { hook: { ...draft().hook, patternBreak: "broll" } }), REQ, beats, style);
+    expect(plan.beats[0].cutaway).toBeUndefined();
+    expect(plan.hook.patternBreak).toBe("zoom_hit");
+    expect(plan.warnings).toEqual(["1 AI shots of you were removed (no character is picked).", "The B-roll opening had no cutaway left, so it became a zoom hit."]);
+  });
+  it("tells Claude the budget, the uploads and the character", () => {
+    const user = footageUserPrompt(RICH, beats);
+    expect(user).toContain('Cutaway budget: at most 3 cutaways (at most 1 video clips); at most 1 AI shots of the speaker (character "Alex").');
+    expect(user).toContain('- x1 (photo, landscape) "צילום מסך"');
+    expect(user).toContain('- x2 (clip, 2.0 s, portrait) "demo clip"');
+    expect(user).toContain("Background replacement is not available in this version: never mention it.");
+    expect(footageUserPrompt(REQ, beats)).toContain("no AI shots of the speaker (no character).");
+    expect(footageUserPrompt(REQ, beats)).toContain("Uploads from the user: none.");
   });
 });
