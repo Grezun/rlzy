@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseEditPlan, type Cutaway, type EditPlan } from "../schema/edit-plan";
 import { EXTRA_IMG, EXTRA_VID, fixtureExtras, footageTranscript, testEditStyle, validEditPlan } from "../testing/fixtures";
 import { plural } from "../plural";
-import { applyCutawayBudget, cutawayBudget, cutawayFit, planCutaways } from "./cutaways";
+import { applyCutawayBudget, cutawayBudget, cutawayFit, cutawayTransitions, planCutaways } from "./cutaways";
 
 const style = testEditStyle();
 const words = footageTranscript().words;
@@ -115,5 +115,19 @@ describe("uploads", () => {
     expect(cutawayFit({ kind: "upload", assetId: EXTRA_VID }, x, "full", 1.3)).toBe("cover"); // portrait in 9:16
     expect(cutawayFit({ kind: "upload", assetId: EXTRA_VID }, x, "split", 1.3)).toBe("contain_blur"); // portrait in 9:8
     expect(cutawayFit({ kind: "ai_broll", prompt: "x", media: "image" }, x, "split", 1.3)).toBe("cover");
+  });
+});
+
+describe("cutaway transitions", () => {
+  const c = (layout: "full" | "split", fromFrame: number, durationInFrames: number, pulled = false) => ({ layout, fromFrame, durationInFrames, pulled });
+  it("cycles whip and zoom on full cutaways, slides split ones, and cuts in the B-roll opening at frame 0", () => {
+    expect(cutawayTransitions([c("full", 0, 30, true), c("split", 60, 45), c("full", 150, 45), c("full", 250, 45)], style)).toEqual([
+      { in: "cut", out: "whip" }, { in: "slide", out: "slide" }, { in: "zoom", out: "zoom" }, { in: "whip", out: "whip" },
+    ]);
+  });
+  it("leaves with a cut when the next cutaway follows within 6 frames, and that one enters with a cut, so the speaker never flickers between them", () => {
+    const shown = [c("full", 0, 45), c("full", 51, 45), c("full", 120, 45)];
+    expect(cutawayTransitions(shown, style).map((t) => t.out)).toEqual(["cut", "zoom", "whip"]);
+    expect(cutawayTransitions(shown, style).map((t) => t.in)).toEqual(["whip", "cut", "whip"]);
   });
 });

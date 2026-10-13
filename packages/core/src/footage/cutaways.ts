@@ -1,12 +1,30 @@
 import type { Cutaway, CutawaySource, EditPlan } from "../schema/edit-plan";
 import type { FootageExtra } from "../schema/footage";
-import type { Word } from "../schema/timeline";
+import type { CutawayTransition, Word } from "../schema/timeline";
 import { ctaStartFrame, framesToMs, msToFrames, planShots, type PlannedShot } from "./shots";
 import type { EditStyle } from "./style";
 import { plural } from "../plural";
 
 export type PlacedCutaway = { beatId: string; source: CutawaySource; layout: "full" | "split"; fromFrame: number; durationInFrames: number; pulled: boolean };
 export type CutawayPlacement = { placed: PlacedCutaway[]; warnings: string[] };
+
+/**
+ * Look pass (spec §5.4): full cutaways cycle style.cutaways.transitions, split ones slide, the B-roll opening cuts in at
+ * frame 0, and a cutaway followed by another within backToBackFrames leaves with a cut and the one after it enters with a cut.
+ * Entries and exits play inside the cutaway's own frames, so no timing changes.
+ */
+export function cutawayTransitions(shown: Pick<PlacedCutaway, "layout" | "fromFrame" | "durationInFrames" | "pulled">[], style: EditStyle): { in: CutawayTransition; out: CutawayTransition }[] {
+  const kinds = style.cutaways.transitions;
+  let full = 0;
+  return shown.map((c, i) => {
+    const kind: CutawayTransition = c.layout === "split" ? "slide" : kinds[full++ % kinds.length];
+    const prev = shown[i - 1];
+    const next = shown[i + 1];
+    const afterPrev = !!prev && c.fromFrame - (prev.fromFrame + prev.durationInFrames) <= style.cutaways.backToBackFrames;
+    const backToBack = !!next && next.fromFrame - (c.fromFrame + c.durationInFrames) <= style.cutaways.backToBackFrames;
+    return { in: c.pulled || afterPrev ? "cut" : kind, out: backToBack ? "cut" : kind };
+  });
+}
 
 const secs = (frames: number) => (framesToMs(frames) / 1000).toFixed(1);
 

@@ -237,9 +237,12 @@ describe("cutaways", () => {
 
   it("full: a cutaway layer over the speaker (who stays underneath), with a whoosh", () => {
     const { timeline } = compileFootage(on("b2", still("full")), transcript, faceTrackFixture(), withArt, style);
-    expect(timeline.cutaways).toEqual([{ id: "b2", fromFrame: 89, durationInFrames: 45, layout: "full", media: { kind: "image", src: "asset:b2.png", fit: "cover", kenBurns: 1.06 } }]);
+    expect(timeline.cutaways).toEqual([{
+      id: "b2", fromFrame: 89, durationInFrames: 45, layout: "full", transition: { in: "whip", out: "whip" },
+      media: { kind: "image", src: "asset:b2.png", fit: "cover", kenBurns: 1.12, drift: { x: 0.03, y: 0 } },
+    }]);
     expect(timeline.clips.map((c) => c.sceneId)).toEqual(["b1-1", "b1-2", "b2-1", "b3-1"]);
-    expect(timeline.sfx?.map((c) => `${c.name}@${c.frame}`)).toContain("whoosh2@89");
+    expect(timeline.sfx).toContainEqual({ name: "whoosh2", frame: 89, src: "w2.wav", volumeDb: -14 });
   });
 
   it("split: the speaker clip is cut at the cutaway's end, the split part is cropped around the face, captions sit on the seam", () => {
@@ -252,6 +255,8 @@ describe("cutaways", () => {
     expect(rest.source!.outMs).toBeCloseTo(split.source!.inMs + (57 * 1000) / 30, 2);
     expect(timeline.captions.pages![3].topPct).toBe(50);
     expect(voiceSegments).toEqual(compile().voiceSegments); // the voice never changes
+    expect(timeline.cutaways![0].transition).toEqual({ in: "slide", out: "slide" });
+    expect(timeline.sfx?.map((c) => `${c.name}@${c.frame}`)).toContain("whoosh2@89");
   });
 
   it("B-roll pattern break: the first cutaway opens the reel, full screen, 1 s, and the first shot doesn't punch", () => {
@@ -259,6 +264,18 @@ describe("cutaways", () => {
     expect(timeline.cutaways!.map((c) => [c.id, c.fromFrame, c.durationInFrames, c.layout])).toEqual([["b2", 0, 30, "full"]]);
     expect(timeline.hook!.patternBreak).toBe("broll");
     expect(timeline.clips[0].crop!.punchFrames).toBeUndefined();
+    expect(timeline.cutaways![0].transition).toEqual({ in: "cut", out: "whip" });
+    expect(timeline.sfx!.filter((c) => c.frame === 0).map((c) => c.name)).toEqual(["whoosh1"]); // the hook's whoosh only, never doubled
+  });
+
+  it("drifts each still a different way (right, up, left, down) and never drifts clips", () => {
+    const four = plan({
+      ending: { kind: "none" }, hook: { patternBreak: "none", reason: "" },
+      beats: validEditPlan().beats.map((b) => ({ ...b, cutaway: still("split", 0, 1000) })) as EditPlan["beats"],
+    });
+    const art = { ...assets, cutaways: { b1: { kind: "image" as const, src: "asset:1.png" }, b2: { kind: "video" as const, src: "asset:2.mp4" }, b3: { kind: "image" as const, src: "asset:3.png" } } };
+    const media = compileFootage(four, transcript, faceTrackFixture(), art, style).timeline.cutaways!.map((c) => c.media);
+    expect(media.map((m) => (m.kind === "image" ? m.drift : m.kind))).toEqual([{ x: 0.03, y: 0 }, "video", { x: 0, y: -0.03 }]);
   });
 
   it("B-roll opening whose cutaway was skipped in generation falls back to a zoom hit on the first shot (never a whoosh over nothing)", () => {

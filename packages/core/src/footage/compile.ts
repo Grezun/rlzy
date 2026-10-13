@@ -6,7 +6,7 @@ import { TimelineSchema, type SfxName, type Timeline, type TimelineClip, type Ti
 import { placeCaptionPages, screenChinY, type FaceSpan } from "./caption-place";
 import { addSnaps, applyBreaks, pickBreaks } from "./breaks";
 import { pageWords, type ReelWord } from "./captions";
-import { cutawayFit, placeCutaways, type PlacedCutaway } from "./cutaways";
+import { cutawayFit, cutawayTransitions, placeCutaways, type PlacedCutaway } from "./cutaways";
 import { faceAt } from "./face-track";
 import { centerFor, ctaStartFrame, framesToMs, maxScaleFor, msToFrames, planShots, shotCrop } from "./shots";
 import type { EditStyle } from "./style";
@@ -26,6 +26,9 @@ const r3 = (v: number) => Math.round(v * 1000) / 1000;
 const r4 = (v: number) => Math.round(v * 10_000) / 10_000;
 const clampN = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const splitWords = (s: string) => s.trim().split(/\s+/).filter(Boolean);
+
+/** Still drift directions, cycled per still: right, up, left, down. */
+const DRIFTS: [number, number][] = [[1, 0], [0, -1], [-1, 0], [0, 1]];
 
 export function footageDurationMs(plan: Pick<EditPlan, "beats" | "hook" | "ending" | "source">, words: Word[], style: EditStyle): number {
   return framesToMs(planShots(plan, words, style).reduce((n, s) => n + s.frames, 0));
@@ -102,9 +105,17 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
   const patternBreaks = applyBreaks(clips, picked, faces, style);
   addSnaps(clips, style);
   const { clips: finalClips, faces: finalFaces } = splitForCutaways(clips, faces, shown.filter((c) => c.layout === "split"));
-  const cutaways: TimelineCutaway[] = shown.map((c) => ({
-    id: c.beatId, fromFrame: c.fromFrame, durationInFrames: c.durationInFrames, layout: c.layout, media: cutawayMedia(c, plan, assets, style),
-  }));
+  const transitions = cutawayTransitions(shown, style);
+  let still = 0;
+  const drift = (v: number) => (v === 0 ? 0 : r4((v * style.cutaways.driftPct) / 100));
+  const cutaways: TimelineCutaway[] = shown.map((c, i) => {
+    const media = cutawayMedia(c, plan, assets, style);
+    const d = media.kind === "image" ? DRIFTS[still++ % DRIFTS.length] : null;
+    return {
+      id: c.beatId, fromFrame: c.fromFrame, durationInFrames: c.durationInFrames, layout: c.layout, transition: transitions[i],
+      media: d && media.kind === "image" ? { ...media, drift: { x: drift(d[0]), y: drift(d[1]) } } : media,
+    };
+  });
 
   const lastShot = shots[shots.length - 1];
   const speechEndFrame = total - (lastShot.frames - lastShot.speechFrames);
@@ -150,10 +161,11 @@ export function compileFootage(plan: EditPlan, transcript: Transcript, faceTrack
       splitWords(headline.big).forEach((_, j) => cues.push({ name: pops[pop++ % 2], frame: (small + j) * style.headlineWordFrames, volumeDb: style.sfxVolumeDb.pop }));
     }
     patternBreaks.forEach((b, i) => cues.push({ name: whooshes[(i + 1) % 2], frame: b.frame, volumeDb: style.sfxVolumeDb.whoosh }));
-    for (const c of shown) {
-      if (c.layout !== "full" || cues.some((q) => q.name.startsWith("whoosh") && Math.abs(q.frame - c.fromFrame) <= 6)) continue;
-      cues.push({ name: "whoosh2", frame: c.fromFrame, volumeDb: style.sfxVolumeDb.whoosh });
-    }
+    // Look pass: a whoosh on every cutaway that enters with a transition (the B-roll opening shares the hook's).
+    shown.forEach((c, i) => {
+      if (transitions[i].in === "cut" || cues.some((q) => q.name.startsWith("whoosh") && Math.abs(q.frame - c.fromFrame) <= style.cutaways.backToBackFrames)) return;
+      cues.push({ name: i % 2 === 0 ? "whoosh2" : "whoosh1", frame: c.fromFrame, volumeDb: style.cutaways.whooshDb });
+    });
     if (ending.kind === "cta") cues.push({ name: pops[pop++ % 2], frame: ending.fromFrame, volumeDb: style.sfxVolumeDb.pop });
     if (plan.sfx === "lively") {
       finalClips.forEach((c, i) => {

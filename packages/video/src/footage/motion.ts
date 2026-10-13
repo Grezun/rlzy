@@ -1,4 +1,4 @@
-import type { Timeline, TimelineClip, TimelineCrop } from "@reel/core";
+import type { CutawayTransition, Timeline, TimelineClip, TimelineCrop } from "@reel/core";
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const easeOutCubic = (p: number) => 1 - Math.pow(1 - p, 3);
@@ -105,5 +105,51 @@ export function splitTransform(cy: number): string {
   return `translateY(${(t * 100).toFixed(3)}%)`;
 }
 
-/** Linear zoom from 1 to `to` across the cutaway (spec §6: stills +6 %). */
-export const kenBurnsScale = (frame: number, frames: number, to: number) => 1 + (to - 1) * clamp01(frame / Math.max(1, frames - 1));
+const easeInCubic = (p: number) => p * p * p;
+const easeOutSine = (p: number) => Math.sin((p * Math.PI) / 2);
+
+/**
+ * Still cutaways (look pass): zoom 1 → `to` and drift by `drift` (fractions of the frame), easing out so the motion reads
+ * even on a 1 s still. The translate (applied before the scale) is clamped to (1 − 1/s)/2, so no frame edge ever shows.
+ */
+export function kenBurnsTransform(frame: number, frames: number, to: number, drift: { x: number; y: number } = { x: 0, y: 0 }): string {
+  const p = easeOutSine(clamp01(frame / Math.max(1, frames - 1)));
+  const s = 1 + (to - 1) * p;
+  const limit = (1 - 1 / s) / 2;
+  const t = (d: number) => Math.max(-limit, Math.min(limit, d * p)) * 100;
+  return `scale(${s.toFixed(4)}) translate(${t(drift.x).toFixed(3)}%, ${t(drift.y).toFixed(3)}%)`;
+}
+
+/** The blurred fill behind a misfit upload drifts half as far the other way (parallax). */
+export function parallaxFill(frame: number, frames: number, scale: number, drift: { x: number; y: number }): string {
+  const p = easeOutSine(clamp01(frame / Math.max(1, frames - 1)));
+  return `scale(${scale}) translate(${(-drift.x * 50 * p).toFixed(3)}%, ${(-drift.y * 50 * p).toFixed(3)}%)`;
+}
+
+export type SlotMotion = { x: number; y: number; scale: number; blurPx: number; opacity: number };
+export type SlotTransitionStyle = { inFrames: number; outFrames: number; whipBlurPx: number; zoomFrom: number; zoomTo: number; zoomBlurPx: number };
+const STILL: SlotMotion = { x: 0, y: 0, scale: 1, blurPx: 0, opacity: 1 };
+
+function phase(kind: Exclude<CutawayTransition, "cut">, amount: number, fwd: number, m: SlotTransitionStyle, entering: boolean): SlotMotion {
+  switch (kind) {
+    case "whip":
+      return { x: (entering ? fwd : -fwd) * 100 * amount, y: 0, scale: 1, blurPx: m.whipBlurPx * amount, opacity: 1 };
+    case "zoom":
+      return { x: 0, y: 0, scale: 1 + ((entering ? m.zoomFrom : m.zoomTo) - 1) * amount, blurPx: m.zoomBlurPx * amount, opacity: 1 - amount };
+    case "slide":
+      return { x: 0, y: -100 * amount, scale: 1, blurPx: 0, opacity: 1 };
+  }
+}
+
+/**
+ * A cutaway's entry and exit, inside its own frames (the speaker underneath shows as it leaves). x and y are % of the slot.
+ * Whips move forward in reading order: LTR content enters from the right and leaves to the left; RTL mirrors it.
+ */
+export function cutawayMotion(t: { in: CutawayTransition; out: CutawayTransition } | undefined, frame: number, durationInFrames: number, direction: Timeline["direction"], m: SlotTransitionStyle): SlotMotion {
+  if (!t) return STILL;
+  const fwd = direction === "ltr" ? 1 : -1;
+  if (t.in !== "cut" && frame < m.inFrames) return phase(t.in, 1 - easeOutCubic(clamp01((frame + 1) / m.inFrames)), fwd, m, true);
+  const outStart = durationInFrames - m.outFrames;
+  if (t.out !== "cut" && frame >= outStart) return phase(t.out, easeInCubic(clamp01((frame - outStart + 1) / m.outFrames)), fwd, m, false);
+  return STILL;
+}

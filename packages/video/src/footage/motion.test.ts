@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, kenBurnsScale, revealedCount, speakerTransform, splitTransform, visiblePages, wordPulse } from "./motion";
+import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, cutawayMotion, kenBurnsTransform, parallaxFill, revealedCount, speakerTransform, splitTransform, visiblePages, wordPulse } from "./motion";
+import { houseStyle } from "../house-style";
 
 describe("speakerTransform", () => {
   const punch = { cx: 0.5, cy: 0.4, scaleFrom: 1, scaleTo: 1.3, punchFrames: 6 };
@@ -108,8 +109,51 @@ describe("split speaker and Ken Burns", () => {
     expect(splitTransform(0.1)).toBe("translateY(0.000%)");
     expect(splitTransform(0.95)).toBe("translateY(-50.000%)");
   });
-  it("zooms stills +6 % across the cutaway", () => {
-    expect(kenBurnsScale(0, 45, 1.06)).toBe(1);
-    expect(kenBurnsScale(44, 45, 1.06)).toBeCloseTo(1.06, 6);
+  it("zooms stills to 1.12 while drifting, easing out, and never shows an edge", () => {
+    expect(kenBurnsTransform(0, 45, 1.12, { x: 0.03, y: 0 })).toBe("scale(1.0000) translate(0.000%, 0.000%)");
+    expect(kenBurnsTransform(44, 45, 1.12, { x: 0.03, y: 0 })).toBe("scale(1.1200) translate(3.000%, 0.000%)");
+    for (const to of [1.06, 1.12, 1.3])
+      for (const dx of [-0.1, -0.03, 0, 0.03, 0.1])
+        for (let f = 0; f < 45; f++) {
+          const m = kenBurnsTransform(f, 45, to, { x: dx, y: -dx }).match(/^scale\(([\d.]+)\) translate\((-?[\d.]+)%, (-?[\d.]+)%\)$/);
+          expect(m).not.toBeNull();
+          const [s, tx, ty] = m!.slice(1).map(Number);
+          const limit = ((1 - 1 / s) / 2) * 100 + 0.005;
+          expect(Math.abs(tx)).toBeLessThanOrEqual(limit);
+          expect(Math.abs(ty)).toBeLessThanOrEqual(limit);
+        }
+  });
+  it("drifts the blurred fill half as far the other way (parallax)", () => {
+    expect(parallaxFill(44, 45, 1.15, { x: 0.03, y: 0 })).toBe("scale(1.15) translate(-1.500%, 0.000%)");
+  });
+});
+
+describe("cutaway entries and exits", () => {
+  const m = houseStyle.cutaway.transition;
+  const t = (kind: "whip" | "zoom" | "slide") => ({ in: kind, out: kind });
+  const STILL = { x: 0, y: 0, scale: 1, blurPx: 0, opacity: 1 };
+  it("does nothing for hard cuts, for no transition, and between the entry and the exit", () => {
+    expect(cutawayMotion({ in: "cut", out: "cut" }, 0, 45, "ltr", m)).toEqual(STILL);
+    expect(cutawayMotion({ in: "cut", out: "cut" }, 44, 45, "ltr", m)).toEqual(STILL);
+    expect(cutawayMotion(undefined, 0, 45, "ltr", m)).toEqual(STILL);
+    expect(cutawayMotion(t("whip"), 20, 45, "ltr", m)).toEqual(STILL);
+  });
+  it("whips in from the reading side and out the other way, settled by the 6th frame", () => {
+    expect(cutawayMotion(t("whip"), 0, 45, "ltr", m).x).toBeGreaterThan(40);
+    expect(cutawayMotion(t("whip"), 0, 45, "rtl", m).x).toBeLessThan(-40);
+    expect(cutawayMotion(t("whip"), 5, 45, "ltr", m)).toMatchObject({ x: 0, blurPx: 0 });
+    expect(cutawayMotion(t("whip"), 44, 45, "ltr", m).x).toBeCloseTo(-100);
+    expect(cutawayMotion(t("whip"), 44, 45, "rtl", m).x).toBeCloseTo(100);
+  });
+  it("zooms in from 1.25 with blur and a fade, zooms out to 1.15 and fades, and slides split cutaways from the top", () => {
+    const z0 = cutawayMotion(t("zoom"), 0, 45, "ltr", m);
+    expect(z0.scale).toBeGreaterThan(1.1);
+    expect(z0.opacity).toBeLessThan(0.5);
+    expect(z0.blurPx).toBeGreaterThan(5);
+    const z44 = cutawayMotion(t("zoom"), 44, 45, "ltr", m);
+    expect(z44.opacity).toBe(0);
+    expect(z44.scale).toBeCloseTo(1.15, 6);
+    expect(cutawayMotion(t("slide"), 0, 45, "ltr", m).y).toBeLessThan(-40);
+    expect(cutawayMotion(t("slide"), 44, 45, "ltr", m).y).toBeCloseTo(-100);
   });
 });

@@ -1,5 +1,5 @@
 import * as z from "zod";
-import { BreakKindSchema } from "../schema/timeline";
+import { BreakKindSchema, CutawayTransitionSchema } from "../schema/timeline";
 
 export const EditStyleSchema = z.object({
   cutGapMs: z.number().positive(),
@@ -50,7 +50,15 @@ export const EditStyleSchema = z.object({
     minSpeakerShare: z.number().min(0).max(1),
     brollBreakMs: z.number().positive(),
     kenBurns: z.number().min(1).max(1.5),
+    /** Stills also drift this far (% of the frame) while they zoom; the direction changes per still. */
+    driftPct: z.number().min(0).max(10),
     contentFitRatio: z.number().min(1),
+    /** Full cutaways cycle these entries (split ones slide in from the top). */
+    transitions: z.array(CutawayTransitionSchema.extract(["whip", "zoom"])).min(1),
+    /** A cutaway followed by another within this many frames leaves with a cut (and the next enters with one), so the speaker never flickers between them. */
+    backToBackFrames: z.number().int().nonnegative(),
+    /** Whoosh level for cutaway entries (quieter than the hook's: about one every 3 s). */
+    whooshDb: z.number(),
   }),
 });
 export type EditStyle = z.infer<typeof EditStyleSchema>;

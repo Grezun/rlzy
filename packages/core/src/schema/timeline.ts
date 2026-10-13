@@ -68,6 +68,10 @@ export const CaptionPageSchema = z.object({
 });
 export type CaptionPage = z.infer<typeof CaptionPageSchema>;
 
+/** How a cutaway enters and leaves (look pass): whip pan, zoom blur, slide (split cutaways) or a hard cut. The only definition: EditStyle and the timeline both use it. */
+export const CutawayTransitionSchema = z.enum(["cut", "whip", "zoom", "slide"]);
+export type CutawayTransition = z.infer<typeof CutawayTransitionSchema>;
+
 const CutawayFitSchema = z.enum(["cover", "contain_blur"]);
 /** A cutaway layer (spec §5.4): full replaces the picture, split fills the top half over a split speaker clip. */
 export const TimelineCutawaySchema = z.object({
@@ -75,8 +79,12 @@ export const TimelineCutawaySchema = z.object({
   fromFrame: z.number().int().nonnegative(),
   durationInFrames: z.number().int().positive(),
   layout: z.enum(["full", "split"]),
+  transition: z.object({ in: CutawayTransitionSchema, out: CutawayTransitionSchema }).optional(),
   media: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("image"), src: z.string().min(1), fit: CutawayFitSchema, kenBurns: z.number().min(1).max(1.5) }),
+    z.object({
+      kind: z.literal("image"), src: z.string().min(1), fit: CutawayFitSchema, kenBurns: z.number().min(1).max(1.5),
+      drift: z.object({ x: z.number().min(-0.1).max(0.1), y: z.number().min(-0.1).max(0.1) }).optional(),
+    }),
     z.object({ kind: z.literal("video"), src: z.string().min(1), fit: CutawayFitSchema }),
     z.object({ kind: z.literal("diagram"), template: z.enum(["compare", "list", "flow"]), items: z.array(z.string().min(1)).min(2).max(4) }),
   ]),

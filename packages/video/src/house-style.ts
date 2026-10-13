@@ -44,8 +44,8 @@ export const houseStyle = {
     // One visible break every ≈ 10 s (8–12 s): the first reel had a single break at 0 s and read as static.
     breaks: { everyMs: 10_000, minMs: 8000, maxMs: 12_000, minShotFrames: 12, kinds: ["zoom_blur", "zoom_hit", "zoom_blur", "flash"], hitFactor: 1.2, zoomBlurFrames: 6 },
     snapFrames: 4,
-    // spec §5.5: ≥ 40 % shows the speaker; §5.7: B-roll break 1 s; §6: stills +6 % Ken Burns
-    cutaways: { minMs: 1000, minSpeakerShare: 0.4, brollBreakMs: 1000, kenBurns: 1.06, contentFitRatio: 1.3 },
+    // spec §5.5: ≥ 40 % shows the speaker; §5.7: B-roll break 1 s; look pass: stills +12 % with a 3 % drift, whip/zoom entries, quieter whooshes
+    cutaways: { minMs: 1000, minSpeakerShare: 0.4, brollBreakMs: 1000, kenBurns: 1.12, driftPct: 3, contentFitRatio: 1.3, transitions: ["whip", "zoom"], backToBackFrames: 6, whooshDb: -14 },
   } satisfies EditStyle,
   captions: {
     topPct: 45, // only when a page has no position
@@ -62,8 +62,8 @@ export const houseStyle = {
     emoji: { popFrames: 8, overshoot: 1.35 },
   },
   motion: { snapScale: 1.06, zoomBlurScale: 1.22, zoomBlurPx: 16 },
-  /** Uploads that don't fit their slot: shown whole over a blurred, dimmed, zoomed copy of themselves. */
-  cutaway: { blurPx: 40, dim: 0.35, fillScale: 1.15 },
+  /** Uploads that don't fit their slot: shown whole over a blurred, dimmed, zoomed copy. Look pass: entries 6 frames, exits 5, inside the cutaway. */
+  cutaway: { blurPx: 40, dim: 0.35, fillScale: 1.15, transition: { inFrames: 6, outFrames: 5, whipBlurPx: 22, zoomFrom: 1.25, zoomTo: 1.15, zoomBlurPx: 18 } },
   /** Spec §6 DiagramCard: white line art on near-black with violet wavy lines (ref R3 panels). */
   diagram: { bg: "#0B0A12", line: "#FFFFFF", wave: "#8B6CFF", waveOpacity: 0.35, stroke: 6, radius: 28, fontSize: 64, compactScale: 0.62, itemFrames: 8, popFrames: 6, iconSize: 64 },
   /** Under the captions' range so neither covers the face. Small line on the caption glass, big words on a red sticker. */
