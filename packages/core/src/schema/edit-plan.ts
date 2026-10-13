@@ -11,6 +11,20 @@ export type MusicMood = z.infer<typeof MusicMoodSchema>;
 export const PatternBreakSchema = z.enum(["zoom_hit", "flash", "broll", "none"]);
 
 const Prompt = z.string().trim().min(1).max(1500);
+export const BACKGROUND_PROMPT_MAX = 1500;
+const BackgroundPrompt = z.string().trim().min(1, "Describe the AI background scene, or keep the original background.").max(BACKGROUND_PROMPT_MAX);
+/** Spec §3 / §12: per-section backgrounds; plan 3 accepts one AI section (notYetIssues refuses brand backdrops and more sections). */
+export const BackgroundSchema = z.discriminatedUnion("mode", [
+  z.object({ mode: z.literal("original") }),
+  z.object({
+    mode: z.literal("replace"),
+    sections: z.array(z.object({
+      fromBeatId: BeatId,
+      source: z.discriminatedUnion("kind", [z.object({ kind: z.literal("ai"), prompt: BackgroundPrompt }), z.object({ kind: z.literal("brand"), assetId: z.string().min(1) })]),
+    })).min(1),
+  }),
+]);
+export type Background = z.infer<typeof BackgroundSchema>;
 export const DiagramTemplateSchema = z.enum(["compare", "list", "flow"]);
 export const CutawayMediaSchema = z.enum(["image", "video"]);
 export const CutawaySourceSchema = z.discriminatedUnion("kind", [
@@ -72,16 +86,7 @@ export const EditPlanSchema = z
       z.object({ kind: z.literal("loop") }),
       z.object({ kind: z.literal("none") }),
     ]),
-    background: z.discriminatedUnion("mode", [
-      z.object({ mode: z.literal("original") }),
-      z.object({
-        mode: z.literal("replace"), // plan 3
-        sections: z.array(z.object({
-          fromBeatId: BeatId,
-          source: z.discriminatedUnion("kind", [z.object({ kind: z.literal("ai"), prompt: Prompt }), z.object({ kind: z.literal("brand"), assetId: z.string().min(1) })]),
-        })).min(1),
-      }),
-    ]),
+    background: BackgroundSchema,
     music: z.discriminatedUnion("kind", [
       z.object({ kind: z.literal("library"), assetId: z.uuid() }), // team_music.id
       z.object({ kind: z.literal("ai"), prompt: z.string().trim().min(1).max(300) }),
@@ -121,17 +126,37 @@ export const EditPlanSchema = z
       if (s.kind === "diagram" && s.template === "compare" && s.items.length !== 2) ctx.addIssue({ code: "custom", path, message: "A compare diagram has exactly 2 items." });
       if (s.kind === "diagram" && s.template === "flow" && s.items.length > 3) ctx.addIssue({ code: "custom", path, message: "A flow diagram has 2 or 3 steps." });
     });
+    if (plan.background.mode === "replace") {
+      if (!plan.source.matteAssetId) {
+        ctx.addIssue({ code: "custom", path: ["background"], message: "Background replacement needs the cut-out of you, and this video has none. Keep the original background." });
+      }
+      const order = new Map(plan.beats.map((b, i) => [b.id, i]));
+      let last = -1;
+      plan.background.sections.forEach((s, i) => {
+        const path = ["background", "sections", i, "fromBeatId"];
+        const at = order.get(s.fromBeatId);
+        if (at === undefined) return ctx.addIssue({ code: "custom", path, message: `there is no beat ${s.fromBeatId}` });
+        if (i === 0 && at !== 0) ctx.addIssue({ code: "custom", path, message: `the first background starts at the first beat (${plan.beats[0].id})` });
+        else if (i > 0 && at <= last) ctx.addIssue({ code: "custom", path, message: "background sections follow the beats in order, at most one per beat" });
+        last = at;
+      });
+    }
     if (plan.hook.patternBreak === "broll" && !plan.beats.some((b) => b.keep && b.cutaway)) {
       ctx.addIssue({ code: "custom", path: ["hook", "patternBreak"], message: "The B-roll pattern break needs a cutaway on a kept beat: add one, or pick zoom hit, flash or none." });
     }
   });
 export type EditPlan = z.infer<typeof EditPlanSchema>;
 
-export const NOT_YET = { background: "Background replacement arrives in a later update: keep the original background." };
+export const NOT_YET = {
+  brand: "Brand backdrops arrive in a later update: use an AI scene or the original background.",
+  sections: "One background per reel for now: remove the extra background sections.",
+};
 
-/** What the schema describes but no plan renders yet (plan 3 removes this). */
+/** What the schema describes but plan 3 doesn't render yet (spec §12): brand backdrops and more than one background section. */
 export function notYetIssues(plan: EditPlan): string[] {
-  return plan.background.mode === "replace" ? [NOT_YET.background] : [];
+  if (plan.background.mode !== "replace") return [];
+  const sections = plan.background.sections;
+  return [...(sections.length > 1 ? [NOT_YET.sections] : []), ...(sections.some((s) => s.source.kind === "brand") ? [NOT_YET.brand] : [])];
 }
 
 /** Parses an edit plan, throwing an Error that lists every schema issue and every not-yet-supported limit as one line each. */
@@ -163,6 +188,7 @@ export const NO_CUTAWAY: DraftCutaway = { kind: "none", media: "image", prompt: 
  * What Claude writes. Free of min/max constraints (structured outputs don't enforce them); empty strings and -1 mean
  * "none" (callout: "" for none). emphasisWordIdx is a plain number (z.number().int() would emit safe-integer bounds); parseEditPlan checks it
  * is an integer. uploadId is the x1…x6 id from the prompt; code maps it to the asset. Code fills in the beat spans, source, estimate and warnings, then validates with parseEditPlan.
+ * background.prompt is the AI scene for "replace" ("" for "original"); code keeps "original" when the video has no cut-out.
  */
 export const EditPlanDraftSchema = z.object({
   title: z.string(),
@@ -176,6 +202,7 @@ export const EditPlanDraftSchema = z.object({
   }),
   ending: z.object({ kind: z.enum(["cta", "loop", "none"]), keyword: z.string() }),
   music: z.object({ kind: z.enum(["library", "ai", "none"]), trackId: z.string(), prompt: z.string() }),
+  background: z.object({ mode: z.enum(["original", "replace"]), prompt: z.string() }),
   sfx: SfxLevelSchema,
 });
 export type EditPlanDraft = z.infer<typeof EditPlanDraftSchema>;

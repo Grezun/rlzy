@@ -37,7 +37,7 @@ export type PlanFootagePayload = z.infer<typeof PlanFootageJobPayloadSchema>;
 
 const StepStatusSchema = z.enum(["running", "done"]);
 export const JobProgressSchema = z.object({
-  steps: z.partialRecord(z.enum(["voice", "visuals", "render", "export", "conform", "transcribe", "faces", "plan", "music"]), StepStatusSchema).default({}),
+  steps: z.partialRecord(z.enum(["voice", "visuals", "render", "export", "conform", "transcribe", "faces", "plan", "music", "cutout", "background"]), StepStatusSchema).default({}),
   scenes: z
     .record(z.string(), z.object({ status: z.enum(["running", "done", "failed"]), reason: z.string().optional() }))
     .default({}),

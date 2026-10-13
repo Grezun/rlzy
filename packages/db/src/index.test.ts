@@ -48,6 +48,7 @@ describe("footage payloads and progress", () => {
     p = applyPipelineEvent(p, { type: "note", message: "AI music failed twice" });
     p = applyPipelineEvent(p, { type: "note", message: "No sound effects" });
     expect(JobProgressSchema.parse(p)).toEqual({ steps: { transcribe: "running" }, scenes: {}, notes: ["AI music failed twice", "No sound effects"] });
+    expect(JobProgressSchema.parse({ steps: { cutout: "done", background: "running" } }).steps).toEqual({ cutout: "done", background: "running" });
   });
   it("validates the plan-footage payload", () => {
     const base = {

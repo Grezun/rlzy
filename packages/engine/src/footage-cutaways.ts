@@ -82,17 +82,27 @@ export async function generateCutaways(placed: PlacedCutaway[], plan: EditPlan, 
   return { assets, notes: placed.flatMap((c) => (notes.has(c.beatId) ? [notes.get(c.beatId)!] : [])) };
 }
 
+/**
+ * One paid AI still, cached under `hash`: a cached still costs nothing and is never generated again.
+ * `file` is the download path without its extension (taken from the result URL).
+ */
+export async function makeStill(
+  deps: Pick<CutawayGenDeps, "image" | "store" | "log">, hash: string, prompt: string, file: string, logLine: string, character?: SoulReference,
+): Promise<StoredAsset> {
+  return cached(deps.store, hash, async () => {
+    deps.log(logLine);
+    const res = await deps.image.generate({ prompt, resumeKey: hash, ...(character ? { character } : {}) });
+    const ext = extFromUrl(res.url, "png");
+    const path = `${file}.${ext}`;
+    await downloadTo(res.url, path);
+    return { path, ext, meta: { kind: "image", provider: deps.image.model.split("/")[0], model: deps.image.model, requestId: res.requestId, estUsd: estUsd(deps.image.model, "perImage", 1) } };
+  });
+}
+
 async function makeOne(j: Job, deps: CutawayGenDeps): Promise<CutawayAssets[string]> {
   const beat = j.c.beatId;
   const tmp = (name: string) => join(deps.tmpDir, `${beat}-${name}`);
-  const image = await cached(deps.store, j.imageHash, async () => {
-    deps.log(`${beat}: generating ${j.self ? "an AI shot of you" : "a B-roll still"}`);
-    const res = await deps.image.generate({ prompt: j.prompt, resumeKey: j.imageHash, ...(j.self ? { character: deps.character! } : {}) });
-    const ext = extFromUrl(res.url, "png");
-    const file = tmp(`image.${ext}`);
-    await downloadTo(res.url, file);
-    return { path: file, ext, meta: { kind: "image", provider: deps.image.model.split("/")[0], model: deps.image.model, requestId: res.requestId, estUsd: estUsd(deps.image.model, "perImage", 1) } };
-  });
+  const image = await makeStill(deps, j.imageHash, j.prompt, tmp("image"), `${beat}: generating ${j.self ? "an AI shot of you" : "a B-roll still"}`, j.self ? deps.character! : undefined);
   if (!j.video) return { kind: "image", asset: image };
   const raw = await cached(deps.store, j.videoHash!, async () => {
     deps.log(`${beat}: animating the still (${j.billSec} s)`);

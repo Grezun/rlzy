@@ -15,3 +15,5 @@ export * from "./footage-ingest";
 export { serveDir } from "./serve";
 export * from "./footage-generate";
 export * from "./footage-cutaways";
+export * from "./footage-background";
+export * from "./segmenter";

@@ -124,6 +124,8 @@ export function createFakeProviders(opts: { workDir: string; failPromptsContaini
         ending: { kind: keyword ? "cta" : "loop", keyword: keyword ?? "" },
         music: trackId ? { kind: "library", trackId, prompt: "" } : { kind: "ai", trackId: "", prompt: "calm lo-fi beat" },
         sfx: "subtle",
+        // Plan 3: the user prompt says when the speaker is cut out; then the fake planner picks a scene (a flat fake still at generation).
+        background: /background "replace"/.test(user) ? { mode: "replace", prompt: "a bright modern studio with plants and soft daylight" } : { mode: "original", prompt: "" },
       };
       return { stopReason: "end_turn", draft, raw: JSON.stringify(draft) };
     }, houseStyle.edit),

@@ -1,8 +1,8 @@
 import { parseEditPlan } from "@reel/core";
 import { houseStyle } from "@reel/video/house-style";
 import { describe, expect, it } from "vitest";
-import { footageTranscript, validEditPlan } from "../../../packages/core/src/testing/fixtures";
-import { checkEditPlan, describeFootageLength, editPlan, normalizePlanForSave } from "./edit-plan-edit";
+import { footageTranscript, MATTE_HASH, validEditPlan } from "../../../packages/core/src/testing/fixtures";
+import { checkEditPlan, describeFootageLength, editPlan, normalizePlanForSave, scenePrompt } from "./edit-plan-edit";
 
 const plan = () => parseEditPlan(validEditPlan());
 
@@ -63,7 +63,7 @@ describe("checkEditPlan", () => {
   it("refuses plan-2/3 fields a crafted client might send", () => {
     const r = checkEditPlan({ ...plan(), background: { mode: "replace", sections: [{ fromBeatId: "b1", source: { kind: "ai", prompt: "x" } }] } });
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.errors.join(" ")).toMatch(/Background replacement arrives in a later update/);
+    if (!r.ok) expect(r.errors.join(" ")).toMatch(/Background replacement needs the cut-out of you/);
   });
 });
 
@@ -72,5 +72,30 @@ describe("describeFootageLength", () => {
     const words = footageTranscript().words;
     expect(describeFootageLength(plan(), words, houseStyle.edit)).toEqual({ text: "Length ≈ 7 s (target 15 s)", tooLong: false });
     expect(describeFootageLength({ ...plan(), source: { ...plan().source, durationMs: 40_000 } }, words.map((w) => ({ ...w, startMs: w.startMs * 4, endMs: w.endMs * 4 })), houseStyle.edit).tooLong).toBe(true);
+  });
+});
+
+describe("background (plan 3)", () => {
+  const cut = () => parseEditPlan({ ...validEditPlan(), source: { ...validEditPlan().source, matteAssetId: MATTE_HASH } });
+  it("switches to an AI scene from the first beat and back; saving trims the scene", () => {
+    const p = editPlan(cut(), { type: "setBackground", prompt: " a bright home office " });
+    expect(p.background).toEqual({ mode: "replace", sections: [{ fromBeatId: "b1", source: { kind: "ai", prompt: " a bright home office " } }] });
+    expect(scenePrompt(normalizePlanForSave(p).background)).toBe("a bright home office");
+    expect(checkEditPlan(p).ok).toBe(true);
+    expect(editPlan(p, { type: "setBackground", prompt: null }).background).toEqual({ mode: "original" });
+    expect(scenePrompt({ mode: "original" })).toBe("");
+  });
+  it("refuses an empty scene and a scene for a video without a cut-out, with plain messages", () => {
+    const empty = checkEditPlan(editPlan(cut(), { type: "setBackground", prompt: "  " }));
+    expect(empty.ok).toBe(false);
+    if (!empty.ok) expect(empty.errors.join(" ")).toContain("Describe the AI background scene, or keep the original background.");
+    const none = checkEditPlan(editPlan(plan(), { type: "setBackground", prompt: "office" }));
+    expect(none.ok).toBe(false);
+    if (!none.ok) expect(none.errors.join(" ")).toContain("Background replacement needs the cut-out of you, and this video has none. Keep the original background.");
+  });
+  it("refuses a brand backdrop a crafted client might send", () => {
+    const r = checkEditPlan({ ...cut(), background: { mode: "replace", sections: [{ fromBeatId: "b1", source: { kind: "brand", assetId: "x" } }] } });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join(" ")).toContain("Brand backdrops arrive in a later update");
   });
 });

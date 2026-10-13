@@ -48,6 +48,8 @@ export const FootageSourceSchema = z.object({
   durationMs: z.number().int().positive(),
   transcriptAssetId: AssetHashSchema,
   faceTrackAssetId: AssetHashSchema,
+  /** Plan 3: the speaker's matte (grey H.264, frame-aligned with the working copy), made at ingest. Absent: no cut-out, so the background stays original. */
+  matteAssetId: AssetHashSchema.optional(),
   extras: z.array(FootageExtraSchema).max(6).default([]),
 });
 export type FootageSource = z.infer<typeof FootageSourceSchema>;

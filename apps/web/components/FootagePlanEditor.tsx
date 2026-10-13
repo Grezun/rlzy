@@ -1,5 +1,5 @@
 "use client";
-import { CALLOUT_MAX_CHARS, EmptyEditError, footageDurationMs, withFootageEstimate, type EditPlan, type Word } from "@reel/core";
+import { BACKGROUND_PROMPT_MAX, backgroundCost, CALLOUT_MAX_CHARS, EmptyEditError, footageDurationMs, withFootageEstimate, type EditPlan, type Word } from "@reel/core";
 import { houseStyle } from "@reel/video/house-style";
 import { useRouter } from "next/navigation";
 import { useMemo, useReducer, useState, useTransition } from "react";
@@ -8,7 +8,7 @@ import {
 } from "@/app/projects/[id]/footage-actions";
 import { CutawayEditor } from "@/components/CutawayEditor";
 import { placementWarnings } from "@/lib/cutaway-edit";
-import { checkEditPlan, describeFootageLength, editPlan, normalizePlanForSave } from "@/lib/edit-plan-edit";
+import { checkEditPlan, describeFootageLength, editPlan, normalizePlanForSave, scenePrompt } from "@/lib/edit-plan-edit";
 
 export type LibraryTrack = { id: string; title: string; mood: string };
 type Result = { ok: true } | { ok: false; errors: string[] };
@@ -56,6 +56,9 @@ export function FootagePlanEditor({ projectId, storyboardId, initial, words, lib
   // Remembered so switching music or ending away and back doesn't lose what the user typed.
   const [aiPrompt, setAiPrompt] = useState(initial.music.kind === "ai" ? initial.music.prompt : "");
   const [keyword, setKeyword] = useState(initial.ending.kind === "cta" ? initial.ending.keyword : "");
+  // Remembered so switching to the original background and back doesn't lose the scene.
+  const [scene, setScene] = useState(scenePrompt(initial.background));
+  const canReplace = !!plan.source.matteAssetId;
   const { errors, pending, act } = useAction();
   const textDir = plan.language === "he" ? "rtl" : "ltr";
   const style = houseStyle.edit;
@@ -191,7 +194,30 @@ export function FootagePlanEditor({ projectId, storyboardId, initial, words, lib
 
         <article className="card stack">
           <strong>Settings</strong>
-          <p className="muted" style={{ margin: 0 }}>Background: original</p>
+          <div className="row">
+            <label>Background
+              <select
+                value={plan.background.mode}
+                disabled={!canReplace && plan.background.mode === "original"}
+                onChange={(e) => dispatch({ type: "setBackground", prompt: e.target.value === "replace" ? scene : null })}
+              >
+                <option value="original">Original (your real background)</option>
+                <option value="replace">AI scene behind you</option>
+              </select>
+            </label>
+          </div>
+          {!canReplace && <span className="muted">This video has no cut-out of you, so it keeps its real background.</span>}
+          {plan.background.mode === "replace" && (
+            <label>Background scene (one AI image, ${backgroundCost(plan.background).toFixed(2)})
+              <textarea
+                dir="auto"
+                maxLength={BACKGROUND_PROMPT_MAX}
+                value={scenePrompt(plan.background)}
+                placeholder="e.g. a bright home office with plants, morning light"
+                onChange={(e) => { setScene(e.target.value); dispatch({ type: "setBackground", prompt: e.target.value }); }}
+              />
+            </label>
+          )}
           <div className="row">
             <label>Character
               <select
@@ -252,7 +278,7 @@ export function FootagePlanEditor({ projectId, storyboardId, initial, words, lib
             <button type="button" className="primary" disabled={pending || problems.length > 0} onClick={() => act(() => approvePlanAction(projectId, storyboardId, plan))}>
               Approve &amp; render
             </button>
-            <span className="muted">Approving may spend Higgsfield credits for AI cutaways and ElevenLabs credits for AI music, up to the estimate above.</span>
+            <span className="muted">Approving may spend Higgsfield credits for AI cutaways and the AI background, and ElevenLabs credits for AI music, up to the estimate above.</span>
           </div>
           {canReplan && (
             <div className="row">

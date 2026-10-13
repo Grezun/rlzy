@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { ceilToCent, estimateFootageCost, estimateReelSeconds } from "../cost";
 import { TimelineSchema } from "../schema/timeline";
 import { parseEditPlan, type EditPlan } from "../schema/edit-plan";
-import { EXTRA_IMG, faceTrackFixture, fixtureExtras, footageTranscript, lowFaceTrackFixture, testEditStyle, validEditPlan } from "../testing/fixtures";
+import { EXTRA_IMG, faceTrackFixture, fixtureExtras, footageTranscript, lowFaceTrackFixture, MATTE_HASH, testEditStyle, validEditPlan } from "../testing/fixtures";
 import { moveCoveredCallouts, planCallouts } from "./callouts";
 import { cutawayBudget, planCutaways } from "./cutaways";
 import { compileFootage, EmptyEditError, footageDurationMs, headlineFaceRect, withFootageEstimate, type FootageAssets } from "./compile";
@@ -148,6 +148,12 @@ describe("estimate", () => {
     expect(footageDurationMs(plan(), transcript.words, style)).toBeCloseTo(compile().durationMs, 6);
     expect(withFootageEstimate(plan(), transcript.words, style).estimate).toEqual({ durationSec: 7.3, credits: 0 });
     expect(withFootageEstimate(plan({ music: { kind: "ai", prompt: "calm lo-fi" } }), transcript.words, style).estimate).toEqual({ durationSec: 7.3, credits: 0.08 });
+  });
+
+  it("adds the AI background still to the estimate, and nothing else changes in the compiled reel", () => {
+    const scene = plan({ source: { ...validEditPlan().source, matteAssetId: MATTE_HASH }, background: { mode: "replace", sections: [{ fromBeatId: "b1", source: { kind: "ai", prompt: "office" } }] } });
+    expect(withFootageEstimate(scene, transcript.words, style).estimate).toEqual({ durationSec: 7.3, credits: 0.04 });
+    expect(compile(scene).timeline).toEqual(compile().timeline);
   });
 
   it("bills music on the shared estimateReelSeconds rule, so generation's check against the estimate agrees", () => {

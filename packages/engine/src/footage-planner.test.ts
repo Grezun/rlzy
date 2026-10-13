@@ -1,9 +1,11 @@
 import { NO_CUTAWAY, parseEditPlan, withFootageEstimate, type DraftCutaway, type EditPlanDraft, type Transcript } from "@reel/core";
 import { houseStyle } from "@reel/video/house-style";
 import { describe, expect, it, vi } from "vitest";
-import { CHARACTER_ID, EXTRA_VID, fixtureExtras, footageTranscript, validEditPlan } from "../../core/src/testing/fixtures";
+import { CHARACTER_ID, EXTRA_VID, fixtureExtras, footageTranscript, MATTE_HASH, validEditPlan } from "../../core/src/testing/fixtures";
 import { buildEditPlan, createFootagePlanner, footageSystemPrompt, footageUserPrompt, transcriptWarnings, type EditDraftModel, type FootagePlanRequest } from "./footage-planner";
 import { splitBeats } from "@reel/core";
+import { tmpdir } from "node:os";
+import { createFakeProviders } from "./providers/fake";
 
 const style = houseStyle.edit;
 const TRACK = "3f2c8f9e-5c1d-4a43-9d4e-2f1c3b4a5d6e";
@@ -15,6 +17,7 @@ const draft = (over: Partial<EditPlanDraft> = {}): EditPlanDraft => ({
   ending: { kind: "cta", keyword: "" },
   music: { kind: "none", trackId: "", prompt: "" },
   sfx: "subtle",
+  background: { mode: "original", prompt: "" },
   ...over,
 });
 const reply = (d: EditPlanDraft | null, stopReason = "end_turn") => ({ stopReason, draft: d, raw: JSON.stringify(d) });
@@ -66,7 +69,7 @@ describe("footageUserPrompt", () => {
     expect(u).toMatch(/Comment keyword from the user: "AI"/);
     expect(u).toContain(`- ${TRACK} "Morning" (calm, 95 s)`);
     expect(u).toMatch(/Notes from the user: קצר וקולע/);
-    expect(u).toContain("Background replacement is not available in this version: never mention it.");
+    expect(u).toContain('Background: keep "original" (this video has no cut-out of the speaker).');
   });
   it("adds the previous plan and the instruction for a Re-plan", () => {
     const previous = parseEditPlan({ ...validEditPlan(), beats: validEditPlan().beats.map((b) => (b.id === "b2" ? { ...b, keep: false, dropReason: "tangent" } : b)) });
@@ -166,7 +169,7 @@ describe("cutaways from Claude's draft", () => {
     expect(user).toContain('Cutaway budget: at most 5 cutaways (at most 2 video clips); at most 1 AI shot of the speaker (character "Alex"). Plan close to the maximum: about one cutaway every 3 s.');
     expect(user).toContain('- x1 (photo, landscape) "צילום מסך"');
     expect(user).toContain('- x2 (clip, 2.0 s, portrait) "demo clip"');
-    expect(user).toContain("Background replacement is not available in this version: never mention it.");
+    expect(user).toContain('Background: keep "original" (this video has no cut-out of the speaker).');
     expect(footageUserPrompt(REQ, beats)).toContain("no AI shots of the speaker (no character).");
     expect(footageUserPrompt(REQ, beats)).toContain("Uploads from the user: none.");
   });
@@ -195,5 +198,37 @@ describe("callouts from Claude's draft", () => {
   it("tells Claude the callout budget and what a callout is", () => {
     expect(footageUserPrompt(REQ, beats)).toContain("Callout budget: at most 3 callouts.");
     expect(footageSystemPrompt()).toContain('a number from the talk ("1/5", "3x", "90%") or 1–3 key words');
+  });
+});
+
+describe("background from Claude's draft (plan 3)", () => {
+  const beats = splitBeats(REQ.transcript.words);
+  const CUT: FootagePlanRequest = { ...REQ, source: { ...REQ.source, matteAssetId: MATTE_HASH } };
+  const scene = { mode: "replace" as const, prompt: " a bright home office with plants " };
+  it("puts one AI scene behind the speaker from the first beat, priced at $0.04", () => {
+    const plan = buildEditPlan(draft({ background: scene }), CUT, beats, style);
+    expect(plan.background).toEqual({ mode: "replace", sections: [{ fromBeatId: "b1", source: { kind: "ai", prompt: "a bright home office with plants" } }] });
+    expect(plan.estimate.credits).toBe(0.04);
+    expect(plan.warnings).toEqual([]);
+  });
+  it("keeps the real background without a cut-out (no warning: ingest already said why), and warns about an empty scene", () => {
+    expect(buildEditPlan(draft({ background: scene }), REQ, beats, style).background).toEqual({ mode: "original" });
+    expect(buildEditPlan(draft({ background: scene }), REQ, beats, style).warnings).toEqual([]);
+    const empty = buildEditPlan(draft({ background: { mode: "replace", prompt: "  " } }), CUT, beats, style);
+    expect(empty.background).toEqual({ mode: "original" });
+    expect(empty.warnings).toEqual(["The AI background had no scene description, so the reel keeps your real background."]);
+  });
+  it("tells Claude whether the speaker is cut out, what a good scene is, and to keep the choice on a re-plan", () => {
+    expect(footageUserPrompt(CUT, beats)).toContain('Background: the speaker is cut out, so you can put an AI scene behind them (background "replace" with a prompt) or keep their real background ("original").');
+    expect(footageUserPrompt(REQ, beats)).toContain('Background: keep "original" (this video has no cut-out of the speaker).');
+    expect(footageSystemPrompt()).toContain("one English sentence describing an empty place");
+    expect(footageSystemPrompt()).toContain("On a re-plan, keep the previous background unless the user's change asks otherwise.");
+    const previous = buildEditPlan(draft({ background: scene }), CUT, beats, style);
+    expect(footageUserPrompt({ ...CUT, previous, instruction: "shorter" }, beats)).toContain('Background: AI scene "a bright home office with plants".');
+  });
+  it("the fake planner proposes an AI scene when the video has a cut-out, and the original background otherwise", async () => {
+    const fake = createFakeProviders({ workDir: tmpdir() }).footagePlanner;
+    expect((await fake.plan(CUT)).background).toEqual({ mode: "replace", sections: [{ fromBeatId: "b1", source: { kind: "ai", prompt: "a bright modern studio with plants and soft daylight" } }] });
+    expect((await fake.plan(REQ)).background).toEqual({ mode: "original" });
   });
 });

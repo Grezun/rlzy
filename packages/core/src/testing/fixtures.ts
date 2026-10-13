@@ -31,6 +31,7 @@ export const validStoryboard = () => ({
 export const HASH_A = "a".repeat(64);
 export const HASH_B = "b".repeat(64);
 export const HASH_C = "c".repeat(64);
+export const MATTE_HASH = "9".repeat(64);
 
 const tw = (text: string, startMs: number, endMs: number) => ({ text, startMs, endMs, logprob: -0.05 });
 
@@ -91,6 +92,7 @@ export const testEditStyle = (): EditStyle => ({
   snapFrames: 4,
   cutaways: { minMs: 1000, minSpeakerShare: 0.4, brollBreakMs: 1000, kenBurns: 1.12, driftPct: 3, contentFitRatio: 1.3, transitions: ["whip", "zoom"], backToBackFrames: 6, whooshDb: -14 },
   callouts: { durationMs: 1600, minMs: 800, clearFrames: 6, topSafePct: 9, gapPct: 2, heightPct: 7, noFaceTopPct: 20, sideWidthPct: 53, sidePadPct: 4 },
+  background: { zoom: 1.08, driftPct: 2.5, driftPeriodSec: 24, driftPeriodYSec: 38.4, blurSigma: 5, dim: 0.1, saturation: 0.9, featherPx: 3 },
 });
 
 /** The first real reel's framing (camera below the face): the face sits low, chin at y 0.7. */

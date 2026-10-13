@@ -18,8 +18,8 @@ type JobLike = { type: string; status: string; progress: unknown; error: string 
 type StepKey = keyof ReturnType<typeof emptyProgress>["steps"];
 const STEPS: Record<string, [StepKey, string][]> = {
   generate: [["voice", "Voice"], ["visuals", "Visuals"], ["render", "Render"], ["export", "Export"]],
-  ingest_footage: [["conform", "Prepare video"], ["faces", "Find face"], ["transcribe", "Transcribe"], ["plan", "Plan the edit"]],
-  generate_footage: [["voice", "Cut audio"], ["music", "Music"], ["visuals", "Cutaways"], ["render", "Render"], ["export", "Export"]],
+  ingest_footage: [["conform", "Prepare video"], ["faces", "Find face"], ["transcribe", "Transcribe"], ["cutout", "Cut you out"], ["plan", "Plan the edit"]],
+  generate_footage: [["voice", "Cut audio"], ["music", "Music"], ["background", "Background"], ["visuals", "Cutaways"], ["render", "Render"], ["export", "Export"]],
 };
 
 const PLAN_HEADLINES: Record<string, [string, ProgressView["tone"]]> = {
@@ -40,7 +40,7 @@ const HEADLINES: Record<string, Record<string, [string, ProgressView["tone"]]>> 
   generate: GENERATE_HEADLINES,
   ingest_footage: {
     queued: ["Waiting for a worker…", "info"],
-    running: ["Preparing your video: transcribing and planning the edit…", "info"],
+    running: ["Preparing your video: transcribing, cutting you out and planning the edit…", "info"],
     done: ["Edit plan ready: review and approve it below.", "success"],
     failed: ["Preparing the video failed.", "error"],
   },
@@ -65,7 +65,9 @@ export function describeJob(job: JobLike | null, sceneIds: string[]): ProgressVi
   let [headline, tone] = (HEADLINES[job.type] ?? GENERATE_HEADLINES)[job.status] ?? [job.status, "info"];
   if (job.type === "generate_footage" && job.status === "done" && notes.length > 0) [headline, tone] = ["Your reel is ready. Some parts were skipped:", "warning"];
   const view: ProgressView = { headline, tone, steps: [], scenes: [], notes, ...(job.error ? { error: job.error } : {}) };
-  view.steps = (STEPS[job.type] ?? []).map(([key, label]) => ({ key, label, state: progress.steps[key] ?? "pending" }));
+  // A finished job without a step never had it (e.g. a job from before "Cut you out" and "Background"): hide it, not pending forever.
+  const steps = (STEPS[job.type] ?? []).filter(([key]) => job.status !== "done" || progress.steps[key] !== undefined);
+  view.steps = steps.map(([key, label]) => ({ key, label, state: progress.steps[key] ?? "pending" }));
   if (progress.steps.render === "running" && progress.renderProgress !== undefined) view.renderPercent = Math.round(progress.renderProgress * 100);
   if (job.type !== "generate") return view;
   view.scenes = sceneIds.map((id) => {

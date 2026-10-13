@@ -9,7 +9,8 @@ export class FfmpegError extends Error {
 
 export const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_STDERR_CHARS = 64 * 1024;
-const ffmpegBin = () => process.env.FFMPEG_PATH || "ffmpeg";
+/** The ffmpeg binary (FFMPEG_PATH or "ffmpeg" on PATH); exported for pipes that runFfmpeg can't express. */
+export const ffmpegBin = () => process.env.FFMPEG_PATH || "ffmpeg";
 const ffprobeBin = () => process.env.FFPROBE_PATH || "ffprobe";
 
 function run(bin: string, args: string[], timeoutMs: number): Promise<{ stdout: string; stderr: string }> {

@@ -13,7 +13,8 @@ export type PlanAction =
   | { type: "setReason"; reason: string }
   | { type: "setEnding"; ending: EditPlan["ending"] }
   | { type: "setMusic"; music: EditPlan["music"] }
-  | { type: "setSfx"; sfx: EditPlan["sfx"] };
+  | { type: "setSfx"; sfx: EditPlan["sfx"] }
+  | { type: "setBackground"; prompt: string | null };
 
 type Beat = EditPlan["beats"][number];
 const withBeat = (p: EditPlan, id: string, f: (b: Beat) => Beat): EditPlan => ({ ...p, beats: p.beats.map((b) => (b.id === id ? f(b) : b)) });
@@ -54,6 +55,11 @@ export function editPlan(plan: EditPlan, a: PlanAction): EditPlan {
       return { ...plan, music: a.music };
     case "setSfx":
       return { ...plan, sfx: a.sfx };
+    case "setBackground":
+      return {
+        ...plan,
+        background: a.prompt === null ? { mode: "original" } : { mode: "replace", sections: [{ fromBeatId: plan.beats[0].id, source: { kind: "ai", prompt: a.prompt } }] },
+      };
   }
 }
 
@@ -64,6 +70,13 @@ const trimCutaway = (c: Cutaway): Cutaway => {
   return c;
 };
 
+/** The first AI section's scene, or "" (plan 3 plans have one section). */
+export const scenePrompt = (b: EditPlan["background"]): string =>
+  b.mode === "replace" && b.sections[0]?.source.kind === "ai" ? b.sections[0].source.prompt : "";
+
+const trimBackground = (b: EditPlan["background"]): EditPlan["background"] =>
+  b.mode === "replace" ? { ...b, sections: b.sections.map((s) => (s.source.kind === "ai" ? { ...s, source: { ...s.source, prompt: s.source.prompt.trim() } } : s)) } : b;
+
 /** Trims text and turns an empty headline into "no headline" (the schema requires a present headline's big line). */
 export function normalizePlanForSave(plan: EditPlan): EditPlan {
   const h = plan.hook.headline;
@@ -71,6 +84,7 @@ export function normalizePlanForSave(plan: EditPlan): EditPlan {
   return {
     ...plan,
     hook: { ...hook, reason: plan.hook.reason.trim() },
+    background: trimBackground(plan.background),
     beats: plan.beats.map((b) => {
       const e = b.emoji !== undefined && !b.emoji.trim() ? without(b, "emoji") : b;
       const c = e.callout ? (e.callout.text.trim() ? { ...e, callout: { text: e.callout.text.trim() } } : without(e, "callout")) : e;

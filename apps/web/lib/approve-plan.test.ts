@@ -45,6 +45,16 @@ describe("savePlan / approvePlan", () => {
     expect(r.ok).toBe(false);
     expect(d.written).toEqual([]);
   });
+  it("refuses to approve a crafted replace background when the stored video has no cut-out, writing nothing", async () => {
+    const d = deps();
+    const client = { ...stored(), source: { ...stored().source, matteAssetId: "9".repeat(64) }, background: { mode: "replace", sections: [{ fromBeatId: "b1", source: { kind: "ai", prompt: "office" } }] } };
+    const r = await approvePlan(d, { projectId: "p1", storyboardId: SB, json: client });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.join(" ")).toContain("Background replacement needs the cut-out of you");
+    expect(d.queued).toEqual([]);
+    expect(d.written).toEqual([]);
+    expect(d.setProjectStatus).not.toHaveBeenCalled();
+  });
   it("approves and queues generate_footage", async () => {
     const d = deps();
     expect(await approvePlan(d, { projectId: "p1", storyboardId: SB, json: stored() })).toEqual({ ok: true });

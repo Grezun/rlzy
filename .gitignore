@@ -8,3 +8,4 @@ work/
 apps/web/.next/
 apps/web/next-env.d.ts
 tools/face-helper/.build/
+tools/segment-helper/.build/

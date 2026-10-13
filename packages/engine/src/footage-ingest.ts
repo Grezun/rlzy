@@ -1,6 +1,6 @@
 import { FaceTrackSchema, FOOTAGE_MAX_SEC_INGEST, formatMinSec, TranscriptSchema, type FaceTrack, type FootageExtra, type FootageSource, type PipelineEvent, type Transcript, type VoiceSegment } from "@reel/core";
 import { inputHash } from "@reel/core/hash";
-import { conformClip, conformPhoto, conformVideo, extractAudio, probe, sha256File } from "@reel/media";
+import { conformClip, conformPhoto, conformVideo, extractAudio, MATTE_REFINE, matteCoverage, probe, sha256File } from "@reel/media";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import type * as z from "zod";
@@ -8,6 +8,7 @@ import type { AssetMeta, AssetStore, StoredAsset } from "./asset-store";
 import type { FaceTracker } from "./face-tracker";
 import { cached, estUsd } from "./pipeline";
 import type { Transcriber } from "./providers/types";
+import { cutoutProblem, SegmenterMissingError, type Segmenter } from "./segmenter";
 
 /** A problem with the uploaded file itself; the message is shown to the user as is. */
 export class FootageInputError extends Error {
@@ -23,15 +24,22 @@ export const footageHashes = {
   transcript: (model: string, workingHash: string) => inputHash({ step: "transcript", v: 1, model, workingHash }),
   faces: (model: string, workingHash: string) => inputHash({ step: "faces", v: 1, model, workingHash }),
   voice: (workingHash: string, segments: VoiceSegment[]) => inputHash({ step: "footage-voice", v: 1, workingHash, segments }),
+  matte: (model: string, workingHash: string, facesHash: string) => inputHash({ step: "matte", v: 1, model, workingHash, facesHash, refine: MATTE_REFINE }),
   musicFit: (trackSha: string, durationMs: number) => inputHash({ step: "music-fit", v: 1, trackSha, durationMs }),
   musicAi: (model: string, prompt: string, durationMs: number) => inputHash({ step: "music-ai", v: 1, model, prompt, durationMs }),
   sfx: (fileSha: string) => inputHash({ step: "sfx", v: 1, fileSha }),
   extra: (sha: string, kind: "image" | "video") => inputHash({ step: "footage-extra", v: 1, sha, kind }),
   selfImage: (model: string, prompt: string, referenceId: string, strength: number) => inputHash({ step: "self-image", v: 1, model, prompt, referenceId, strength }),
   cutawayFit: (rawHash: string, durationMs: number) => inputHash({ step: "cutaway-fit", v: 1, rawHash, durationMs }),
+  background: (model: string, prompt: string) => inputHash({ step: "background", v: 1, model, prompt }),
+  plate: (workingHash: string, matteHash: string, backgrounds: { imageHash: string; fromMs: number }[], look: object) => inputHash({ step: "plate", v: 1, workingHash, matteHash, backgrounds, look }),
 };
 
-export type IngestDeps = { store: AssetStore; transcriber: Transcriber; faceTracker: FaceTracker; tmpDir: string; log: (m: string) => void; onEvent?: (e: PipelineEvent) => void };
+export type IngestDeps = {
+  store: AssetStore; transcriber: Transcriber; faceTracker: FaceTracker; tmpDir: string; log: (m: string) => void; onEvent?: (e: PipelineEvent) => void;
+  /** Plan 3: the speaker's matte. Absent: no cut-out step (the reel keeps its real background), no warning. */
+  segmenter?: Segmenter;
+};
 export type FootageInputs = { working: StoredAsset; transcriptAsset: StoredAsset; transcript: Transcript; faceTrack: FaceTrack };
 
 /** JSON payloads are stored with ext "data": the asset store keeps its own metadata in <hash>.json. */
@@ -87,9 +95,48 @@ export async function ingestFootage(originalPath: string, deps: IngestDeps, extr
   const transcript = await readJson(transcriptAsset, TranscriptSchema);
   if (transcript.words.length < 5) throw new FootageInputError("No speech found. This editor needs a video of you talking.");
   emit({ type: "step", step: "transcribe", status: "done" });
-  // After transcription: extras are free, and an upload without speech should fail before any work on them.
+  // After transcription, so a video without speech fails before minutes of (free) segmentation.
+  const cutout: { matteAssetId?: string; warnings: string[] } = deps.segmenter ? await cutOut(deps.segmenter, working, faces, durationMs, deps) : { warnings: [] };
+  // Extras are free too, and an upload without speech should fail before any work on them.
   const { extras, warnings } = await ingestExtras(extraFiles, deps);
-  return { source: { assetId: working.hash, durationMs, transcriptAssetId: transcriptAsset.hash, faceTrackAssetId: faces.hash, extras }, transcript, warnings };
+  return {
+    source: {
+      assetId: working.hash, durationMs, transcriptAssetId: transcriptAsset.hash, faceTrackAssetId: faces.hash,
+      ...(cutout.matteAssetId ? { matteAssetId: cutout.matteAssetId } : {}),
+      extras,
+    },
+    transcript,
+    warnings: [...cutout.warnings, ...warnings],
+  };
+}
+
+const firstLine = (err: unknown) => (err instanceof Error ? err.message : String(err)).split("\n")[0];
+
+/**
+ * Spec §4.2 step 6 (plan 3): the speaker's matte, made once per working copy and face track. It never fails ingest: a
+ * problem becomes a plan warning, and the reel keeps its real background.
+ */
+async function cutOut(segmenter: Segmenter, working: StoredAsset, faces: StoredAsset, durationMs: number, deps: IngestDeps): Promise<{ matteAssetId?: string; warnings: string[] }> {
+  const emit = (e: PipelineEvent) => deps.onEvent?.(e);
+  const off = (reason: string) => ({ warnings: [`Background replacement is off for this video: ${reason}.`] });
+  emit({ type: "step", step: "cutout", status: "running" });
+  try {
+    // Not `reproducible`: generation never re-makes a matte, so a failed mirror becomes this warning instead of a matte on one machine only.
+    const matte = await cached(deps.store, footageHashes.matte(segmenter.model, working.hash, faces.hash), async () => {
+      deps.log("ingest: cutting you out (about 3 minutes per minute of video)");
+      const out = join(deps.tmpDir, "matte.mp4");
+      await segmenter.matte(working.path, faces.path, out);
+      return { path: out, ext: "mp4", meta: { kind: "video", provider: segmenter.model.split("/")[0], model: segmenter.model } };
+    });
+    const info = await probe(matte.path);
+    const problem = cutoutProblem(await matteCoverage(matte.path), Math.round((info.video?.durationSec ?? 0) * 1000), durationMs);
+    return problem ? off(problem) : { matteAssetId: matte.hash, warnings: [] };
+  } catch (err) {
+    deps.log(`ingest: the cut-out failed: ${firstLine(err)}`);
+    return off(err instanceof SegmenterMissingError ? err.message : `cutting you out failed (${firstLine(err)})`);
+  } finally {
+    emit({ type: "step", step: "cutout", status: "done" });
+  }
 }
 
 /** Extra photos and clips (cutaway material). Unreadable files are left out with a warning, never failing the upload. */
