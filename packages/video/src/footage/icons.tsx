@@ -1,11 +1,16 @@
 import React from "react";
 
-/** Lucide icons (ISC licence, https://lucide.dev), inlined so @reel/video needs no icon package. */
+/** Lucide icon paths (ISC licence, https://lucide.dev), inlined so @reel/video needs no icon package. */
 type IconProps = { size: number; color: string };
-const Svg: React.FC<IconProps & { children: React.ReactNode }> = ({ size, color, children }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+const Svg: React.FC<IconProps & { strokeWidth?: number; children: React.ReactNode }> = ({ size, color, strokeWidth = 2, children }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
     {children}
   </svg>
 );
-export const Check: React.FC<IconProps> = (p) => <Svg {...p}><path d="M20 6 9 17l-5-5" /></Svg>;
-export const ArrowDown: React.FC<IconProps> = (p) => <Svg {...p}><path d="M12 5v14" /><path d="m19 12-7 7-7-7" /></Svg>;
+
+/** Lucide "check", drawn left to right up to `progress` (0–1): pathLength 1 makes the dash offset the share drawn. */
+export const CheckDraw: React.FC<IconProps & { progress: number }> = ({ progress, ...p }) => (
+  <Svg {...p} strokeWidth={3}>
+    <path d="M4 12l5 5L20 6" pathLength={1} strokeDasharray={1} strokeDashoffset={1 - Math.max(0, Math.min(1, progress))} />
+  </Svg>
+);

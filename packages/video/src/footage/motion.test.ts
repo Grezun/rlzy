@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, cutawayMotion, kenBurnsTransform, parallaxFill, revealedCount, speakerTransform, splitTransform, visiblePages, wordPulse } from "./motion";
+import { activeWordIndex, ctaLines, emojiScale, enterEffect, popBounce, popIn, cutawayMotion, kenBurnsTransform, parallaxFill, revealedCount, springValue, diagramFontScale, drawProgress, speakerTransform, splitTransform, visiblePages, wordPulse } from "./motion";
 import { houseStyle } from "../house-style";
 
 describe("speakerTransform", () => {
@@ -155,5 +155,28 @@ describe("cutaway entries and exits", () => {
     expect(z44.scale).toBeCloseTo(1.15, 6);
     expect(cutawayMotion(t("slide"), 0, 45, "ltr", m).y).toBeLessThan(-40);
     expect(cutawayMotion(t("slide"), 44, 45, "ltr", m).y).toBeCloseTo(-100);
+  });
+});
+
+describe("diagram motion", () => {
+  const spring = { stiffness: 170, damping: 15 };
+  it("springs 0 → 1 with a small overshoot and settles within 2 s", () => {
+    expect(springValue(0, spring)).toBe(0);
+    expect(springValue(-3, spring)).toBe(0);
+    const values = Array.from({ length: 40 }, (_, f) => springValue(f + 1, spring));
+    expect(Math.max(...values)).toBeGreaterThan(1.05);
+    expect(Math.max(...values)).toBeLessThan(1.2);
+    expect(springValue(60, spring)).toBeCloseTo(1, 2);
+  });
+  it("shrinks long items so 40-character Hebrew steps fit", () => {
+    const steps = houseStyle.diagram.fontSteps;
+    expect(diagramFontScale(["בחינם", "בלי חיבור"], steps)).toBe(1);
+    expect(diagramFontScale(["a".repeat(25)], steps)).toBe(0.82);
+    expect(diagramFontScale(["a".repeat(40)], steps)).toBe(0.68);
+  });
+  it("draws lines 0 → 1 over the given frames", () => {
+    expect(drawProgress(-2, 10)).toBe(0);
+    expect(drawProgress(10, 10)).toBe(1);
+    expect(drawProgress(5, 10)).toBeGreaterThan(0.5);
   });
 });

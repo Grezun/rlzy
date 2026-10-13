@@ -64,8 +64,17 @@ export const houseStyle = {
   motion: { snapScale: 1.06, zoomBlurScale: 1.22, zoomBlurPx: 16 },
   /** Uploads that don't fit their slot: shown whole over a blurred, dimmed, zoomed copy. Look pass: entries 6 frames, exits 5, inside the cutaway. */
   cutaway: { blurPx: 40, dim: 0.35, fillScale: 1.15, transition: { inFrames: 6, outFrames: 5, whipBlurPx: 22, zoomFrom: 1.25, zoomTo: 1.15, zoomBlurPx: 18 } },
-  /** Spec §6 DiagramCard: white line art on near-black with violet wavy lines (ref R3 panels). */
-  diagram: { bg: "#0B0A12", line: "#FFFFFF", wave: "#8B6CFF", waveOpacity: 0.35, stroke: 6, radius: 28, fontSize: 64, compactScale: 0.62, itemFrames: 8, popFrames: 6, iconSize: 64 },
+  /** Spec §6 DiagramCard, iOS look: a white rounded card on the grouped background, filling its slot; red accents. */
+  diagram: {
+    backdrop: IOS.groupedBg, card: IOS.white, tile: IOS.groupedBg, ink: IOS.ink, accent: IOS.red, onAccent: IOS.white, separator: IOS.separator,
+    radius: 56, inset: 44, compactInset: 28, padding: 56, compactPadding: 32, shadow: "0 24px 60px rgba(0,0,0,0.16)",
+    fontSize: 68, fontWeight: 700, compactScale: 0.7, iconSize: 92,
+    // Items spring in one after another; checkmarks and flow lines draw themselves.
+    itemFrames: 7, spring: { stiffness: 170, damping: 15 }, drawFrames: 10, riseFrom: 48,
+    drawDelayFrames: 4, itemScaleFrom: 0.92, cardScaleFrom: 0.94, opacityGain: 1.5,
+    // [longest item over N characters, text scale]: Hebrew steps run up to 40 characters.
+    fontSteps: [[30, 0.68], [20, 0.82]] as ReadonlyArray<readonly [number, number]>,
+  },
   /** Under the captions' range so neither covers the face. Small line on the caption glass, big words on a red sticker. */
   headline: {
     topPct: 58, smallSize: 58, smallWeight: 700, bigSize: 150, bigWeight: 800, color: IOS.white,

@@ -1,6 +1,6 @@
 import { averageLuma, makeTestVideo, runFfmpeg } from "@reel/media";
 import { renderReelStill } from "@reel/video/render";
-import { sampleFootageTimeline } from "@reel/video/sample-footage";
+import { sampleCutawayTimeline, sampleFootageTimeline } from "@reel/video/sample-footage";
 import { mkdir, mkdtemp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -28,5 +28,20 @@ describe("footage render (speaker shot, flash)", () => {
     } finally {
       await server.close();
     }
+  }, 300_000);
+});
+
+describe("diagram cards (iOS card fills its slot)", () => {
+  it("renders light full and split cards with no large dark area", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "diagram-"));
+    const full = join(dir, "list.png");
+    await renderReelStill(sampleCutawayTimeline("he"), full, 130);
+    expect(await averageLuma(full)).toBeGreaterThan(170);
+    const split = join(dir, "flow.png");
+    await renderReelStill(sampleCutawayTimeline("he"), split, 40);
+    const top = join(dir, "flow-top.png");
+    // The top 45 % (above the pill on the seam) is the split card.
+    await runFfmpeg(["-i", split, "-vf", "crop=iw:ih*0.45:0:0", top]);
+    expect(await averageLuma(top)).toBeGreaterThan(170);
   }, 300_000);
 });

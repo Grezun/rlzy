@@ -1,3 +1,4 @@
+import { spring } from "remotion";
 import type { CutawayTransition, Timeline, TimelineClip, TimelineCrop } from "@reel/core";
 
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
@@ -153,3 +154,18 @@ export function cutawayMotion(t: { in: CutawayTransition; out: CutawayTransition
   if (t.out !== "cut" && frame >= outStart) return phase(t.out, easeInCubic(clamp01((frame - outStart + 1) / m.outFrames)), fwd, m, false);
   return STILL;
 }
+
+/**
+ * A damped spring from 0 to 1 at `fps` (0 at frame <= 0). A thin wrapper over Remotion's pure `spring()` (verified: no
+ * Remotion context needed) so components and tests share one call shape. 170/15 overshoots by about 11 % and settles by about 0.6 s.
+ */
+export const springValue = (frame: number, cfg: { stiffness: number; damping: number }, fps = 30): number => spring({ frame, fps, config: cfg });
+
+/** Diagram text size multiplier: `steps` are [minimum longest-item length (exclusive), scale], longest threshold first; otherwise 1. */
+export function diagramFontScale(items: string[], steps: ReadonlyArray<readonly [number, number]>): number {
+  const longest = Math.max(0, ...items.map((s) => s.length));
+  return steps.find(([over]) => longest > over)?.[1] ?? 1;
+}
+
+/** 0 → 1 over `frames`, eased: a line drawing itself (checkmarks, flow connectors). */
+export const drawProgress = (frame: number, frames: number) => easeOutCubic(clamp01(frame / frames));
