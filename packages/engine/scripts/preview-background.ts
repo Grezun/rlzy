@@ -1,7 +1,7 @@
 /**
  * Free local preview of background replacement: no API keys and no paid calls.
  *   npm run preview:background                          the fixture clip (or a test video) over a test scene
- *   npm run preview:background -- <video> [<image>]     your own clip (first 8 s) over your own image
+ *   npm run preview:background -- <video> [<image>]     your own clip (first 8 s) over your own image (a missing clip exits 1)
  * It uses Apple Vision when npm run build:segment-helper (and build:face-helper) were run; otherwise the fake ellipse.
  * Writes work/stills/background/: plate-01…04.png, matte-01…04.png and sheet.png (plates on top, mattes below), then
  * look-01…08.png and look-sheet.png (the Hebrew look sample with the plate as the speaker).
@@ -23,12 +23,17 @@ const STILL_SECONDS = [0.5, 2, 3.5, 5];
 
 async function main() {
   const [videoArg, imageArg] = process.argv.slice(2);
+  if (videoArg && !existsSync(resolve(videoArg))) {
+    console.error(`no such file: ${resolve(videoArg)}`);
+    process.exit(1);
+  }
   const out = resolve("work/stills/background");
   await mkdir(out, { recursive: true });
   const dir = await mkdtemp(join(tmpdir(), "bg-preview-"));
   try {
     let source = videoArg ? resolve(videoArg) : FIXTURE_TALKING_HEAD;
-    if (!existsSync(source)) {
+    // Only with no clip given: the fixture, or a generated test video when the fixture isn't checked out.
+    if (!videoArg && !existsSync(source)) {
       source = join(dir, "test.mp4");
       await makeTestVideo(source, { durationSec: 7 });
     }
