@@ -1,11 +1,12 @@
 import { parseEditPlan, type EditPlan } from "@reel/core";
 import type { JobProgress } from "@reel/db";
 import { createFakeProviders, FileAssetStore, noFaceTracker, type FootagePlanRequest } from "@reel/engine";
-import { makeTestVideo } from "@reel/media";
+import { makeTestImage, makeTestVideo } from "@reel/media";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { CHARACTER_ID } from "../../../../packages/core/src/testing/fixtures";
 import { MirroredAssetStore } from "../storage";
 import { InMemoryAssetIndex, InMemoryBlobStore, InMemoryReelDb, makeJob } from "../testing/fakes";
 import { createIngestFootageHandler, createPlanFootageHandler } from "./footage";
@@ -170,5 +171,44 @@ describe("ingest_footage with a mirrored asset store", () => {
     const s = await mirrored("data");
     await expect(createIngestFootageHandler(s.deps)(ingestJob(), ctx)).rejects.toThrow(/object too large/);
     expect(s.db.projectStatus.get(PID)?.status).toBe("failed");
+  }, 300_000);
+});
+
+describe("ingest_footage with extras and a character", () => {
+  const OTHER = "11111111-2222-4333-8444-555555555555";
+  async function run(payloadOver: object, characters = [{ id: CHARACTER_ID, name: "Alex", referenceId: "soul-ref-123" }]) {
+    const dir = await mkdtemp(join(tmpdir(), "ingest-extras-"));
+    const providers = createFakeProviders({ workDir: dir });
+    const db = new InMemoryReelDb();
+    db.characters.push(...characters);
+    const blobs = new InMemoryBlobStore();
+    const store = new FileAssetStore(join(dir, "cache"));
+    await makeTestVideo(join(dir, "up.mp4"), { durationSec: 6, width: 720, height: 1280, withAudio: true });
+    await makeTestImage(join(dir, "shot.png"), { width: 1920, height: 1080 });
+    await blobs.upload("assets", `footage/${PID}/source.mp4`, join(dir, "up.mp4"));
+    await blobs.upload("assets", `footage/${PID}/extra-1.png`, join(dir, "shot.png"));
+    const payload = {
+      storagePath: `footage/${PID}/source.mp4`,
+      settings: { language: "he", targetDurationSec: 15, characterId: CHARACTER_ID },
+      extras: [{ storagePath: `footage/${PID}/extra-1.png`, label: "צילום מסך" }],
+      ...payloadOver,
+    };
+    await createIngestFootageHandler({ store, blobs, db, transcriber: providers.transcriber, faceTracker: noFaceTracker, footagePlanner: providers.footagePlanner })(
+      makeJob({ type: "ingest_footage", project_id: PID, payload }), { report: () => {}, log: () => {} });
+    return parseEditPlan(db.storyboards[0].json);
+  }
+  it("conforms the extras, plans with them and with the picked character", async () => {
+    const plan = await run({});
+    expect(plan.source.extras.map((e) => [e.kind, e.label])).toEqual([["image", "צילום מסך"]]);
+    expect(plan.character).toEqual({ id: CHARACTER_ID, name: "Alex" });
+    expect(plan.beats[0].cutaway?.source).toEqual({ kind: "upload", assetId: plan.source.extras[0].assetId });
+  }, 300_000);
+  it("warns (and plans without AI shots of you) when the picked character was removed", async () => {
+    const plan = await run({}, []);
+    expect(plan.character).toBeUndefined();
+    expect(plan.warnings).toContain("The character you picked was removed, so AI shots of you are off.");
+  }, 300_000);
+  it("refuses extras stored under another reel", async () => {
+    await expect(run({ extras: [{ storagePath: `footage/${OTHER}/extra-1.png`, label: "x" }] })).rejects.toThrow("This upload belongs to another reel.");
   }, 300_000);
 });

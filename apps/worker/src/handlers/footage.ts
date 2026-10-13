@@ -2,7 +2,7 @@ import { parseEditPlan, type EditPlan, type FootageSettings, type FootageSource,
 import { applyPipelineEvent, BUCKETS, emptyProgress, IngestFootageJobPayloadSchema, PlanFootageJobPayloadSchema } from "@reel/db";
 import { ingestFootage, loadFootageInputs, transcriptWarnings, type AssetStore, type FaceTracker, type FootagePlanner, type Transcriber } from "@reel/engine";
 import { houseStyle } from "@reel/video/house-style";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { JobHandler } from "../loop";
@@ -13,12 +13,21 @@ export type FootageHandlerDeps = { store: AssetStore; blobs: BlobStore; db: Reel
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-async function planAndSave(deps: FootageHandlerDeps, projectId: string, input: { settings: FootageSettings; source: FootageSource; transcript: Transcript; instruction?: string; previous?: EditPlan }) {
+async function planAndSave(deps: FootageHandlerDeps, projectId: string, input: { settings: FootageSettings; source: FootageSource; transcript: Transcript; instruction?: string; previous?: EditPlan; extraWarnings?: string[] }) {
   const library = await deps.db.listTeamMusic();
+  const warnings = [...transcriptWarnings(input.transcript, input.settings, houseStyle.edit), ...(input.extraWarnings ?? [])];
+  let character: { id: string; name: string } | undefined;
+  if (input.settings.characterId) {
+    const found = await deps.db.getCharacter(input.settings.characterId);
+    if (found) character = { id: found.id, name: found.name };
+    else warnings.push("The character you picked was removed, so AI shots of you are off.");
+  }
+  const { extraWarnings: _extraWarnings, ...request } = input;
   const planned = await deps.footagePlanner.plan({
-    ...input,
+    ...request,
     library: library.map(({ id, title, mood, durationSec }) => ({ id, title, mood, durationSec })),
-    warnings: transcriptWarnings(input.transcript, input.settings, houseStyle.edit),
+    warnings,
+    ...(character ? { character } : {}),
   });
   const version = await deps.db.nextStoryboardVersion(projectId);
   const plan = { ...planned, version };
@@ -41,15 +50,25 @@ export function createIngestFootageHandler(deps: FootageHandlerDeps): JobHandler
     };
     const tmpDir = await mkdtemp(join(tmpdir(), "reel-ingest-"));
     try {
-      const { storagePath, settings } = IngestFootageJobPayloadSchema.parse(job.payload);
-      if (!storagePath.startsWith(`footage/${job.project_id}/`)) throw new Error("This upload belongs to another reel.");
+      const { storagePath, settings, extras } = IngestFootageJobPayloadSchema.parse(job.payload);
+      const prefix = `footage/${job.project_id}/`;
+      if (!storagePath.startsWith(prefix) || extras.some((e) => !e.storagePath.startsWith(prefix))) throw new Error("This upload belongs to another reel.");
       await deps.db.setProjectStatus(job.project_id, "planning");
       const original = join(tmpDir, basename(storagePath));
       ctx.log("ingest: downloading the upload");
       await deps.blobs.download(BUCKETS.assets, storagePath, original);
-      const { source, transcript } = await ingestFootage(original, { store: deps.store, transcriber: deps.transcriber, faceTracker: deps.faceTracker, tmpDir, log: ctx.log, onEvent });
+      const extraFiles: { path: string; label: string }[] = [];
+      // Downloaded apart from tmpDir: ingest writes its conformed extras there as extra-<n>.<ext>, the names the uploads carry.
+      const extrasDir = join(tmpDir, "extras");
+      await mkdir(extrasDir, { recursive: true });
+      for (const e of extras) {
+        const path = join(extrasDir, basename(e.storagePath));
+        await deps.blobs.download(BUCKETS.assets, e.storagePath, path);
+        extraFiles.push({ path, label: e.label });
+      }
+      const { source, transcript, warnings } = await ingestFootage(original, { store: deps.store, transcriber: deps.transcriber, faceTracker: deps.faceTracker, tmpDir, log: ctx.log, onEvent }, extraFiles);
       onEvent({ type: "step", step: "plan", status: "running" });
-      await planAndSave(deps, job.project_id, { settings, source, transcript });
+      await planAndSave(deps, job.project_id, { settings, source, transcript, extraWarnings: warnings });
       onEvent({ type: "step", step: "plan", status: "done" });
       return { status: "done", progress };
     } catch (err) {

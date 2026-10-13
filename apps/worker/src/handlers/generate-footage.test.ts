@@ -5,6 +5,7 @@ import { mkdtemp, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { CHARACTER_ID } from "../../../../packages/core/src/testing/fixtures";
 import { InMemoryBlobStore, InMemoryReelDb, makeJob } from "../testing/fakes";
 import { createIngestFootageHandler } from "./footage";
 import { createGenerateFootageHandler } from "./generate-footage";
@@ -86,4 +87,29 @@ describe("generate_footage", () => {
     expect(s.db.renders).toEqual([]);
     expect(s.db.projectStatus.get(PID)?.status).toBe("failed");
   }, 300_000);
+
+  it("makes AI shots of the user with the character's Soul ID, and skips them with a note when the character is gone", async () => {
+    const s = await approvedPlan();
+    const plan = s.record.json as EditPlan;
+    s.record.json = {
+      ...plan,
+      character: { id: CHARACTER_ID, name: "Alex" },
+      // b1: the 6 s test video's b2 starts just before the CTA card, so a cutaway there would be dropped.
+      beats: plan.beats.map((b) => (b.id === "b1" ? { ...b, cutaway: { source: { kind: "ai_self", prompt: "the person on a plane", media: "image" }, layout: "full", atMs: 0, durationMs: 1000 } } : b)),
+      estimate: { ...plan.estimate, credits: 1 },
+    };
+    s.db.characters.push({ id: CHARACTER_ID, name: "Alex", referenceId: "soul-ref-123" });
+    const ok = await createGenerateFootageHandler(s.deps)(makeJob({ type: "generate_footage", project_id: PID, payload: { storyboardId: s.record.id } }), ctx);
+    expect(ok.status).toBe("done");
+    expect(s.providers.calls.selfImage).toBe(1);
+    expect(s.db.renders[0].timeline.cutaways?.map((c) => c.id)).toContain("b1");
+
+    // Version 2 of the same plan, approved after the character was deleted.
+    s.db.characters.length = 0;
+    const v2 = { id: crypto.randomUUID(), projectId: PID, version: 2, json: { ...(s.record.json as object), version: 2 }, status: "approved" as const };
+    s.db.storyboards.push(v2);
+    const gone = await createGenerateFootageHandler(s.deps)(makeJob({ type: "generate_footage", project_id: PID, payload: { storyboardId: v2.id } }), ctx);
+    expect(gone.progress?.notes).toContain("The AI shot of you in b1 was skipped: its character no longer exists.");
+    expect(s.providers.calls.selfImage).toBe(1);
+  }, 900_000);
 });

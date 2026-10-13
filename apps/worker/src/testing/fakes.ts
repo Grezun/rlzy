@@ -1,7 +1,7 @@
 import type { JobProgress, JobRow, ProjectStatus } from "@reel/db";
 import { readFile, writeFile } from "node:fs/promises";
 import type { JobOutcome, JobQueue } from "../queue";
-import type { ReelDb, StoryboardRecord, TeamTrack } from "../reel-db";
+import type { ReelDb, SoulCharacter, StoryboardRecord, TeamTrack } from "../reel-db";
 import type { AssetIndex, AssetRecord, BlobStore } from "../storage";
 
 export function makeJob(partial: Partial<JobRow> = {}): JobRow {
@@ -97,6 +97,7 @@ export class InMemoryReelDb implements ReelDb {
   readonly renders: Parameters<ReelDb["insertRender"]>[0][] = [];
   readonly projectStatus = new Map<string, { status: ProjectStatus; title?: string }>();
   readonly music: TeamTrack[] = [];
+  readonly characters: SoulCharacter[] = [];
 
   async nextStoryboardVersion(projectId: string) {
     return Math.max(0, ...this.storyboards.filter((s) => s.projectId === projectId).map((s) => s.version)) + 1;
@@ -108,6 +109,9 @@ export class InMemoryReelDb implements ReelDb {
   }
   async getStoryboard(id: string) {
     return this.storyboards.find((s) => s.id === id) ?? null;
+  }
+  async getCharacter(id: string) {
+    return this.characters.find((c) => c.id === id) ?? null;
   }
   async supersedeDrafts(projectId: string, keepId: string) {
     for (const s of this.storyboards) if (s.projectId === projectId && s.status === "draft" && s.id !== keepId) s.status = "superseded";

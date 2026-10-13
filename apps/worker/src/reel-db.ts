@@ -3,6 +3,7 @@ import type { Database, Json, ProjectStatus } from "@reel/db";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type StoryboardRecord = { id: string; projectId: string; version: number; json: unknown; status: "draft" | "approved" | "superseded" };
+export type SoulCharacter = { id: string; name: string; referenceId: string };
 export type TeamTrack = { id: string; storagePath: string; title: string; mood: MusicMood; durationSec: number };
 
 export interface ReelDb {
@@ -13,6 +14,7 @@ export interface ReelDb {
   listTeamMusic(): Promise<TeamTrack[]>;
   getTeamTrack(id: string): Promise<TeamTrack | null>;
   getStoryboard(id: string): Promise<StoryboardRecord | null>;
+  getCharacter(id: string): Promise<SoulCharacter | null>;
   setProjectStatus(projectId: string, status: ProjectStatus, title?: string): Promise<void>;
   hasRender(storyboardId: string): Promise<boolean>;
   insertRender(input: {
@@ -55,6 +57,12 @@ export class SupabaseReelDb implements ReelDb {
     const { data, error } = await this.sb.from("storyboards").select("id, project_id, version, json, status").eq("id", id).maybeSingle();
     check("storyboard lookup", error);
     return data ? { id: data.id, projectId: data.project_id, version: data.version, json: data.json, status: data.status as StoryboardRecord["status"] } : null;
+  }
+
+  async getCharacter(id: string) {
+    const { data, error } = await this.sb.from("soul_characters").select("id, name, reference_id").eq("id", id).maybeSingle();
+    check("character lookup", error);
+    return data ? { id: data.id, name: data.name, referenceId: data.reference_id } : null;
   }
 
   async supersedeDrafts(projectId: string, keepId: string) {

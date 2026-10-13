@@ -1,6 +1,6 @@
 import { assetSrc, parseEditPlan, SpendCapError, type FootageSource, type PipelineEvent } from "@reel/core";
 import { applyPipelineEvent, BUCKETS, emptyProgress, GenerateJobPayloadSchema } from "@reel/db";
-import { buildFootageTimeline, generateFootageAssets, renderFootage, type AssetStore, type ImageGen, type MediaUploader, type MusicGen, type VideoGen } from "@reel/engine";
+import { buildFootageTimeline, generateFootageAssets, renderFootage, SOUL_REFERENCE_STRENGTH, type AssetStore, type ImageGen, type MediaUploader, type MusicGen, type VideoGen } from "@reel/engine";
 import { houseStyle } from "@reel/video/house-style";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -81,8 +81,9 @@ export function createGenerateFootageHandler(deps: GenerateFootageHandlerDeps): 
         }
         return null;
       };
-      // character: null until the Soul ID lookup lands (Task 10); AI shots of you are skipped with a note meanwhile.
-      const genDeps = { music: deps.music, image: deps.image, video: deps.video, uploader: deps.uploader, character: null, store: deps.store, tmpDir, log: ctx.log, onEvent, library, original, sfxDir: deps.sfxDir, style };
+      const found = plan.character ? await deps.db.getCharacter(plan.character.id) : null;
+      const character = found ? { referenceId: found.referenceId, strength: SOUL_REFERENCE_STRENGTH } : null;
+      const genDeps = { music: deps.music, image: deps.image, video: deps.video, uploader: deps.uploader, character, store: deps.store, tmpDir, log: ctx.log, onEvent, library, original, sfxDir: deps.sfxDir, style };
       const gen = await generateFootageAssets(plan, genDeps);
       const out = await renderFootage(plan, gen, genDeps, join(tmpDir, "out"));
       const paths = await uploadRender(deps.blobs, job.project_id, record.version, out);
