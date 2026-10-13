@@ -65,7 +65,9 @@ export function describeJob(job: JobLike | null, sceneIds: string[]): ProgressVi
   let [headline, tone] = (HEADLINES[job.type] ?? GENERATE_HEADLINES)[job.status] ?? [job.status, "info"];
   if (job.type === "generate_footage" && job.status === "done" && notes.length > 0) [headline, tone] = ["Your reel is ready. Some parts were skipped:", "warning"];
   const view: ProgressView = { headline, tone, steps: [], scenes: [], notes, ...(job.error ? { error: job.error } : {}) };
-  view.steps = (STEPS[job.type] ?? []).map(([key, label]) => ({ key, label, state: progress.steps[key] ?? "pending" }));
+  // A finished job without a step never had it (e.g. a job from before "Cut you out" and "Background"): hide it, not pending forever.
+  const steps = (STEPS[job.type] ?? []).filter(([key]) => job.status !== "done" || progress.steps[key] !== undefined);
+  view.steps = steps.map(([key, label]) => ({ key, label, state: progress.steps[key] ?? "pending" }));
   if (progress.steps.render === "running" && progress.renderProgress !== undefined) view.renderPercent = Math.round(progress.renderProgress * 100);
   if (job.type !== "generate") return view;
   view.scenes = sceneIds.map((id) => {

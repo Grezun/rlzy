@@ -49,4 +49,13 @@ describe("describeJob", () => {
       ["voice", "Cut audio", "done"], ["music", "Music", "done"], ["background", "Background", "pending"], ["visuals", "Cutaways", "running"], ["render", "Render", "pending"], ["export", "Export", "pending"],
     ]);
   });
+  it("hides steps a finished job never had (jobs from before the cut-out and background steps)", () => {
+    const ingest = describeJob({ type: "ingest_footage", status: "done", progress: { steps: { conform: "done", faces: "done", transcribe: "done", plan: "done" }, scenes: {} }, error: null }, []);
+    expect(ingest!.steps.map((s) => `${s.label}:${s.state}`)).toEqual(["Prepare video:done", "Find face:done", "Transcribe:done", "Plan the edit:done"]);
+    const gen = describeJob({ type: "generate_footage", status: "done", progress: { steps: { voice: "done", music: "done", visuals: "done", render: "done", export: "done" }, scenes: {} }, error: null }, []);
+    expect(gen!.steps.map((s) => s.key)).toEqual(["voice", "music", "visuals", "render", "export"]);
+    // A failed job keeps its unreached steps as pending.
+    const failed = describeJob({ type: "ingest_footage", status: "failed", progress: { steps: { conform: "done", faces: "running" }, scenes: {} }, error: "x" }, []);
+    expect(failed!.steps.map((s) => s.state)).toEqual(["done", "running", "pending", "pending", "pending"]);
+  });
 });
