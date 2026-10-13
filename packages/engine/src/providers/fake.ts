@@ -1,13 +1,18 @@
-import { PermanentProviderError } from "@reel/core";
-import { makeTestImage, makeTestTone, makeTestVideo } from "@reel/media";
+import { NO_CUTAWAY, PermanentProviderError, type DraftCutaway, type EditPlanDraft } from "@reel/core";
+import { houseStyle } from "@reel/video/house-style";
+import { makeTestImage, makeTestTone, makeTestVideo, probe } from "@reel/media";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { createFootagePlanner, type FootagePlanner } from "../footage-planner";
 import { buildStoryboard } from "../planner";
 import type { Planner, PlanRequest, Providers } from "./types";
 
 const COLORS = ["0x2E86AB", "0xE4572E", "0x76B041", "0xFFC914", "0x7D5BA6"];
 const WORD_MS = 350;
+
+/** What the fake transcriber "hears" in any upload: three sentences, a filler and a comment keyword. */
+export const FAKE_TALK = "היי חברים, אממ היום אני אראה לכם טריק. זה חוסך שעות עבודה. תכתבו AI בתגובות.";
 
 const FAKE_SCRIPTS = {
   he: ["3 טיפים ל-TikTok שכדאי להכיר", "טיפ ראשון: תפתחו עם הוק חזק", "שמרו ועקבו לעוד טיפים"],
@@ -16,16 +21,17 @@ const FAKE_SCRIPTS = {
 
 /** Deterministic, free providers backed by lavfi fixtures, for tests and `--fake` runs. */
 export function createFakeProviders(opts: { workDir: string; failPromptsContaining?: string }) {
-  const calls = { image: 0, video: 0, upload: 0, voice: 0, plan: 0 };
+  const calls = { image: 0, selfImage: 0, video: 0, upload: 0, voice: 0, plan: 0, transcribe: 0, music: 0 };
   let n = 0;
   const nextFile = (ext: string) => join(opts.workDir, `fake-${++n}.${ext}`);
 
-  const providers: Providers & { planner: Planner; calls: typeof calls } = {
+  const providers: Providers & { planner: Planner; footagePlanner: FootagePlanner; calls: typeof calls } = {
     calls,
     image: {
       model: "fake/image",
-      async generate({ prompt }) {
+      async generate({ prompt, character }) {
         calls.image++;
+        if (character) calls.selfImage++;
         if (opts.failPromptsContaining && prompt.includes(opts.failPromptsContaining)) {
           throw new PermanentProviderError("Higgsfield (fake) was blocked by content moderation", "fake", "fake-req");
         }
@@ -60,6 +66,26 @@ export function createFakeProviders(opts: { workDir: string; failPromptsContaini
         return { audio: await readFile(out), ext: "wav", words, timingSource: "alignment" };
       },
     },
+    transcriber: {
+      model: "fake/scribe",
+      async transcribe(audioPath: string) {
+        calls.transcribe++;
+        const durationMs = Math.round((await probe(audioPath)).durationSec * 1000);
+        const tokens = FAKE_TALK.split(" ");
+        const slot = durationMs / (tokens.length + 1);
+        const words = tokens.map((text, i) => ({ text, startMs: Math.round((i + 0.5) * slot), endMs: Math.round((i + 0.5) * slot + slot * 0.85), logprob: -0.05 }));
+        return { transcript: { languageCode: "heb", languageProbability: 0.99, words, events: [] } };
+      },
+    },
+    music: {
+      model: "fake/music",
+      async compose({ durationMs }: { prompt: string; durationMs: number }) {
+        calls.music++;
+        const out = nextFile("wav");
+        await makeTestTone(out, { durationSec: Math.max(1, durationMs / 1000), volumeDb: -24 });
+        return { audio: await readFile(out), ext: "wav" as const };
+      },
+    },
     planner: {
       async plan(req: PlanRequest) {
         calls.plan++;
@@ -77,6 +103,30 @@ export function createFakeProviders(opts: { workDir: string; failPromptsContaini
         );
       },
     },
+    footagePlanner: createFootagePlanner(async ({ user }) => {
+      calls.plan++;
+      const ids = [...user.matchAll(/^(b\d+) \(/gm)].map((m) => m[1]);
+      const he = /Reel language: Hebrew/.test(user);
+      const keyword = user.match(/Comment keyword from the user: "([^"]+)"/)?.[1];
+      const trackId = user.match(/^- ([0-9a-f-]{36}) "/m)?.[1];
+      const hasUpload = /^- x1 \(/m.test(user);
+      const diagram: DraftCutaway = { ...NO_CUTAWAY, kind: "diagram", template: "list", items: he ? ["בלי עריכה", "בחינם"] : ["No editing", "Free"], layout: "split", atMs: 0, durationMs: 1200 };
+      // The diagram goes on the first beat unless an upload takes it: the 6 s test videos' second beat starts 0.3 s
+      // before the CTA card, where placement would drop it with a note.
+      const cutawayFor = (i: number): DraftCutaway =>
+        i === 0 ? (hasUpload ? { ...NO_CUTAWAY, kind: "upload", uploadId: "x1", atMs: 0, durationMs: 1000 } : { ...diagram, items: [...diagram.items] })
+        : i === 1 && hasUpload ? { ...diagram, items: [...diagram.items] }
+        : { ...NO_CUTAWAY, items: [] };
+      const draft: EditPlanDraft = {
+        title: he ? "עריכה לדוגמה" : "Sample edit",
+        beats: ids.map((id, i) => ({ id, keep: true, dropReason: "", emphasisWordIdx: -1, emoji: "", cutaway: cutawayFor(i), callout: "" })),
+        hook: { coldOpenBeatId: "", headlineSmall: he ? "הטריק ש" : "The trick that", headlineBig: he ? "חוסך שעות" : "saves hours", patternBreak: "zoom_hit", reason: "Fake planner: a headline and a punch-in." },
+        ending: { kind: keyword ? "cta" : "loop", keyword: keyword ?? "" },
+        music: trackId ? { kind: "library", trackId, prompt: "" } : { kind: "ai", trackId: "", prompt: "calm lo-fi beat" },
+        sfx: "subtle",
+      };
+      return { stopReason: "end_turn", draft, raw: JSON.stringify(draft) };
+    }, houseStyle.edit),
   };
   return providers;
 }

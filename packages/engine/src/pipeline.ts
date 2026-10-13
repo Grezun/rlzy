@@ -16,7 +16,7 @@ import {
 import { inputHash } from "@reel/core/hash";
 import { conformVideo, exportDeliverable, fitDuration, normalizeLoudness, probe, thumbnail, trimTrailingSilence } from "@reel/media";
 import { renderReel } from "@reel/video/render";
-import { buildSrt } from "@reel/video/srt";
+import { srtFor } from "@reel/video/srt";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import * as z from "zod";
@@ -49,12 +49,12 @@ export const hashes = {
   fit: (sourceHash: string, targetMs: number) => inputHash({ step: "fit", v: 1, sourceHash, targetMs }),
 };
 
-const estUsd = (model: string, key: "perImage" | "perSecond" | "per1kChars", quantity: number) => {
+export const estUsd = (model: string, key: "perImage" | "perSecond" | "per1kChars", quantity: number) => {
   const price = DEFAULT_COST_TABLE[model]?.[key];
   return price === undefined ? undefined : price * quantity;
 };
 
-async function cached(
+export async function cached(
   store: AssetStore,
   hash: string,
   create: () => Promise<{ path: string; ext: string; meta: Omit<AssetMeta, "createdAt"> }>,
@@ -202,31 +202,40 @@ export async function renderAndExport(
   await mkdir(outDir, { recursive: true });
   const server = await serveDir(deps.store.root);
   try {
-    const emit = (e: PipelineEvent) => deps.onEvent?.(e);
-    const timeline = buildTimeline(sb, gen, server.urlFor);
-    // Asset URLs in timeline.json point at the temporary local server and are only valid during this render.
-    await writeFile(join(outDir, "timeline.json"), JSON.stringify(timeline, null, 2));
-    const master = join(outDir, "master.mp4");
-    deps.log("render: Remotion");
-    emit({ type: "step", step: "render", status: "running" });
-    await renderReel(timeline, master, (progress) => {
-      onProgress?.(progress);
-      emit({ type: "render-progress", progress });
-    });
-    emit({ type: "step", step: "render", status: "done" });
-    emit({ type: "step", step: "export", status: "running" });
-    const reel = join(outDir, "reel.mp4");
-    deps.log("export: social_1080p");
-    await exportDeliverable(master, reel, "social_1080p");
-    const preview = join(outDir, "preview.mp4");
-    await exportDeliverable(master, preview, "preview_540p");
-    const thumb = join(outDir, "thumbnail.jpg");
-    await thumbnail(master, thumb, Math.min(1, timeline.durationInFrames / 30 / 2));
-    emit({ type: "step", step: "export", status: "done" });
-    const srt = join(outDir, "reel.srt");
-    await writeFile(srt, buildSrt(timeline.captions.words));
-    return { timeline, master, reel, preview, thumbnail: thumb, srt };
+    return await renderTimeline(buildTimeline(sb, gen, server.urlFor), deps, outDir, onProgress);
   } finally {
     await server.close();
   }
+}
+
+/** Renders a timeline whose asset URLs are live, then exports the reel, preview, thumbnail and SRT into `outDir`. */
+export async function renderTimeline(
+  timeline: Timeline,
+  deps: Pick<PipelineDeps, "log" | "onEvent">,
+  outDir: string,
+  onProgress?: (progress: number) => void,
+): Promise<RenderOutputs> {
+  const emit = (e: PipelineEvent) => deps.onEvent?.(e);
+  // Asset URLs in timeline.json point at the temporary local server and are only valid during this render.
+  await writeFile(join(outDir, "timeline.json"), JSON.stringify(timeline, null, 2));
+  const master = join(outDir, "master.mp4");
+  deps.log("render: Remotion");
+  emit({ type: "step", step: "render", status: "running" });
+  await renderReel(timeline, master, (progress) => {
+    onProgress?.(progress);
+    emit({ type: "render-progress", progress });
+  });
+  emit({ type: "step", step: "render", status: "done" });
+  emit({ type: "step", step: "export", status: "running" });
+  const reel = join(outDir, "reel.mp4");
+  deps.log("export: social_1080p");
+  await exportDeliverable(master, reel, "social_1080p");
+  const preview = join(outDir, "preview.mp4");
+  await exportDeliverable(master, preview, "preview_540p");
+  const thumb = join(outDir, "thumbnail.jpg");
+  await thumbnail(master, thumb, Math.min(1, timeline.durationInFrames / 30 / 2));
+  emit({ type: "step", step: "export", status: "done" });
+  const srt = join(outDir, "reel.srt");
+  await writeFile(srt, srtFor(timeline));
+  return { timeline, master, reel, preview, thumbnail: thumb, srt };
 }

@@ -25,4 +25,22 @@ describe("timeline sources", () => {
     expect(t.clips.map((c) => c.src)).toEqual(["https://signed/a.png", undefined, "https://already/abs.mp4"]);
     expect(t.audio.musicUrl).toBeUndefined();
   });
+  it("lists and maps sound-effect sources", () => {
+    const withSfx: Timeline = { ...timeline(), sfx: [{ name: "pop1", frame: 3, src: "asset:p.wav", volumeDb: -12 }] };
+    expect(timelineAssetFiles(withSfx).sort()).toEqual(["a.png", "p.wav", "v.wav"]);
+    const mapped = mapTimelineSources(withSfx, (f) => `https://signed/${f}`);
+    expect(mapped.sfx).toEqual([{ name: "pop1", frame: 3, src: "https://signed/p.wav", volumeDb: -12 }]);
+  });
+  it("adds no sfx key to a timeline without sound effects", () => {
+    const mapped = mapTimelineSources(timeline(), (f) => `https://signed/${f}`);
+    expect("sfx" in mapped).toBe(false);
+  });
+  it("includes and maps cutaway media, never diagrams", () => {
+    const t = { ...timeline(), cutaways: [
+      { id: "b1", fromFrame: 0, durationInFrames: 30, layout: "full" as const, media: { kind: "video" as const, src: "asset:c.mp4", fit: "cover" as const } },
+      { id: "b2", fromFrame: 30, durationInFrames: 30, layout: "split" as const, media: { kind: "diagram" as const, template: "list" as const, items: ["a", "b"] } },
+    ] };
+    expect(timelineAssetFiles(t)).toContain("c.mp4");
+    expect(mapTimelineSources(t, (f) => `http://x/${f}`).cutaways![0].media).toMatchObject({ src: "http://x/c.mp4" });
+  });
 });

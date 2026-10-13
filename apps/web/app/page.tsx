@@ -1,17 +1,15 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { projectStatusLabel } from "@/lib/footage-upload";
 import { listProjects } from "@/lib/queries";
 import { createClient } from "@/lib/supabase/server";
-
-const STATUS_LABEL: Record<string, string> = {
-  planning: "Planning", draft: "Awaiting approval", generating: "Generating", needs_attention: "Needs attention", rendered: "Rendered", failed: "Failed",
-};
 
 export default async function Home() {
   const supabase = await createClient();
   const { data: claims } = await supabase.auth.getClaims();
   if (!claims?.claims) redirect("/login");
   const projects = await listProjects(supabase);
+  const now = new Date();
   return (
     <main className="stack">
       <div className="row" style={{ justifyContent: "space-between" }}>
@@ -28,7 +26,7 @@ export default async function Home() {
               <tr key={p.id}>
                 <td><Link href={`/projects/${p.id}`} dir="auto">{p.title}</Link></td>
                 <td>{p.language === "he" ? "עברית" : "English"}</td>
-                <td><span className="badge">{STATUS_LABEL[p.status] ?? p.status}</span></td>
+                <td><span className="badge">{projectStatusLabel(p, now)}</span></td>
                 <td className="muted">{new Date(p.updated_at).toLocaleString()}</td>
               </tr>
             ))}

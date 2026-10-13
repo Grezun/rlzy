@@ -20,6 +20,27 @@ describe("FileAssetStore", () => {
     expect(got!.meta.createdAt).toMatch(/^\d{4}-/);
   });
 
+  it("refuses the json extension, which would overwrite the asset's own metadata file", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "store-"));
+    const src = join(dir, "t.json");
+    await writeFile(src, "{}");
+    const store = new FileAssetStore(join(dir, "cache"));
+    await expect(store.putFile("h", src, "json", { kind: "data", provider: "p" })).rejects.toThrow(/"data"/);
+    expect(await store.get("h")).toBeNull();
+  });
+
+  it("stores data assets as <hash>.data next to the metadata", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "store-"));
+    const src = join(dir, "t.json");
+    await writeFile(src, '{"words":[]}');
+    const store = new FileAssetStore(join(dir, "cache"));
+    await store.putFile("h", src, "data", { kind: "data", provider: "p" });
+    const got = await store.get("h");
+    expect(got).toMatchObject({ fileName: "h.data", meta: { kind: "data" } });
+    expect(await readFile(got!.path, "utf8")).toBe('{"words":[]}');
+    expect(contentTypeFor(got!.fileName)).toBe("application/json");
+  });
+
   it("treats metadata without its file as a miss", async () => {
     const dir = await mkdtemp(join(tmpdir(), "store-"));
     const src = join(dir, "a.wav");

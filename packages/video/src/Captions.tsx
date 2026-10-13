@@ -18,25 +18,32 @@ export function activeTokenIndex(tokens: { fromMs: number }[], nowMs: number): n
   return idx;
 }
 
-function tokenStyle(preset: Timeline["style"]["captionPreset"], active: boolean, accent: string): React.CSSProperties {
-  if (preset === "clean") {
-    return {
-      color: "#FFFFFF",
-      textShadow: "0 4px 18px rgba(0,0,0,0.6)",
-      background: active ? "rgba(0,0,0,0.55)" : "transparent",
-      borderRadius: 12,
-      padding: "0 0.12em",
-    };
+/** The voice-reel caption presets; "pill" is drawn by footage/PillCaptions. */
+export type WordCaptionPreset = Exclude<Timeline["style"]["captionPreset"], "pill">;
+
+function tokenStyle(preset: WordCaptionPreset, active: boolean, accent: string): React.CSSProperties {
+  switch (preset) {
+    case "clean":
+      return {
+        color: "#FFFFFF",
+        textShadow: "0 4px 18px rgba(0,0,0,0.6)",
+        background: active ? "rgba(0,0,0,0.55)" : "transparent",
+        borderRadius: 12,
+        padding: "0 0.12em",
+      };
+    case "bold_pop":
+      return {
+        color: active ? accent : "#FFFFFF",
+        WebkitTextStroke: "12px #000000",
+        paintOrder: "stroke fill",
+        transform: active ? "scale(1.12)" : "none",
+      };
+    default:
+      return preset satisfies never;
   }
-  return {
-    color: active ? accent : "#FFFFFF",
-    WebkitTextStroke: "12px #000000",
-    paintOrder: "stroke fill",
-    transform: active ? "scale(1.12)" : "none",
-  };
 }
 
-const CaptionPage: React.FC<{ page: TikTokPage; timeline: Timeline }> = ({ page, timeline }) => {
+const CaptionPage: React.FC<{ page: TikTokPage; timeline: Timeline; preset: WordCaptionPreset }> = ({ page, timeline, preset }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   const nowMs = page.startMs + (frame / fps) * 1000;
@@ -64,7 +71,7 @@ const CaptionPage: React.FC<{ page: TikTokPage; timeline: Timeline }> = ({ page,
             display: "inline-block",
             unicodeBidi: "isolate",
             margin: "0 0.28em",
-            ...tokenStyle(timeline.style.captionPreset, i === activeIdx, timeline.style.palette[0]),
+            ...tokenStyle(preset, i === activeIdx, timeline.style.palette[0]),
           }}
         >
           {token.text.trim()}
@@ -74,7 +81,7 @@ const CaptionPage: React.FC<{ page: TikTokPage; timeline: Timeline }> = ({ page,
   );
 };
 
-export const Captions: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
+export const Captions: React.FC<{ timeline: Timeline; preset: WordCaptionPreset }> = ({ timeline, preset }) => {
   const { fps } = useVideoConfig();
   const pages = useMemo(
     () =>
@@ -92,7 +99,7 @@ export const Captions: React.FC<{ timeline: Timeline }> = ({ timeline }) => {
         const durationInFrames = Math.max(1, Math.round((endMs / 1000) * fps) - from);
         return (
           <Sequence key={i} from={from} durationInFrames={durationInFrames} layout="none">
-            <CaptionPage page={page} timeline={timeline} />
+            <CaptionPage page={page} timeline={timeline} preset={preset} />
           </Sequence>
         );
       })}

@@ -1,7 +1,8 @@
-export type PipelineStep = "voice" | "visuals" | "render" | "export";
+export type PipelineStep = "voice" | "visuals" | "render" | "export" | "conform" | "transcribe" | "faces" | "plan" | "music";
 
 /** Progress events emitted by the engine pipeline; the worker folds them into the job's progress JSON. */
 export type PipelineEvent =
   | { type: "step"; step: PipelineStep; status: "running" | "done" }
   | { type: "scene"; sceneId: string; status: "running" | "done" | "failed"; reason?: string }
-  | { type: "render-progress"; progress: number };
+  | { type: "render-progress"; progress: number }
+  | { type: "note"; message: string };

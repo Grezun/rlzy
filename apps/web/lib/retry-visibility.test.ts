@@ -15,4 +15,6 @@ describe("canRetryGenerate", () => {
   it("tolerates a malformed payload", () =>
     expect(canRetryGenerate(sb, { type: "generate", status: "done", payload: null })).toBe(true));
   it("draft", () => expect(canRetryGenerate({ id: "sb1", status: "draft" }, null)).toBe(false));
+  it("approved with a done generate_footage for this storyboard", () =>
+    expect(canRetryGenerate(sb, { type: "generate_footage", status: "done", payload: { storyboardId: "sb1" } })).toBe(false));
 });

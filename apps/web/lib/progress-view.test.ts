@@ -32,4 +32,21 @@ describe("describeJob", () => {
   it("tolerates malformed progress JSON", () => {
     expect(describeJob(job({ progress: { steps: "nope" } }), ["s1"])!.steps.every((s) => s.state === "pending")).toBe(true);
   });
+  it("describes footage jobs with their steps and notes", () => {
+    const ingest = describeJob({ type: "ingest_footage", status: "running", progress: { steps: { conform: "done", faces: "done", transcribe: "running" }, scenes: {} }, error: null }, []);
+    expect(ingest!.headline).toBe("Preparing your video: transcribing and planning the edit…");
+    expect(ingest!.steps.map((s) => `${s.label}:${s.state}`)).toEqual(["Prepare video:done", "Find face:done", "Transcribe:running", "Plan the edit:pending"]);
+    const gen = describeJob({ type: "generate_footage", status: "done", progress: { steps: {}, scenes: {}, notes: ["AI music failed (x), so the reel has no music."] }, error: null }, []);
+    expect(gen!.headline).toBe("Your reel is ready. Some parts were skipped:");
+    expect(gen!.tone).toBe("warning");
+    expect(gen!.notes).toEqual(["AI music failed (x), so the reel has no music."]);
+    expect(describeJob({ type: "generate_footage", status: "done", progress: {}, error: null }, [])).toMatchObject({ headline: "Your reel is ready.", tone: "success", notes: [] });
+    expect(describeJob({ type: "plan_footage", status: "running", progress: {}, error: null }, [])!.headline).toBe("Claude is re-planning the edit…");
+  });
+  it("lists the cutaway step of footage generation", () => {
+    const v = describeJob({ type: "generate_footage", status: "running", progress: { steps: { voice: "done", music: "done", visuals: "running" }, scenes: {}, notes: [] }, error: null }, []);
+    expect(v!.steps.map((s) => [s.key, s.label, s.state])).toEqual([
+      ["voice", "Cut audio", "done"], ["music", "Music", "done"], ["visuals", "Cutaways", "running"], ["render", "Render", "pending"], ["export", "Export", "pending"],
+    ]);
+  });
 });

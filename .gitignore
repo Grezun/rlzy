@@ -7,3 +7,4 @@ node_modules/
 work/
 apps/web/.next/
 apps/web/next-env.d.ts
+tools/face-helper/.build/

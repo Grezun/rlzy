@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 type Client = SupabaseClient<Database>;
 
 export async function listProjects(sb: Client) {
-  const { data, error } = await sb.from("projects").select("id, title, language, format, status, updated_at").order("updated_at", { ascending: false }).limit(100);
+  const { data, error } = await sb.from("projects").select("id, title, language, format, status, created_at, updated_at").order("updated_at", { ascending: false }).limit(100);
   if (error) throw new Error(error.message);
   return data;
 }

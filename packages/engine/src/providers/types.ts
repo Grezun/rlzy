@@ -1,10 +1,14 @@
-import type { Language, Storyboard, Word } from "@reel/core";
+import type { Language, Storyboard, Transcript, Word } from "@reel/core";
 
 export type GenResult = { url: string; requestId: string };
 
+/** A trained Soul ID character (spec §4.4 ai_self): Higgsfield's custom reference id and how strongly to follow it. */
+export type SoulReference = { referenceId: string; strength: number };
+export const SOUL_REFERENCE_STRENGTH = 1;
+
 export interface ImageGen {
   readonly model: string;
-  generate(req: { prompt: string; resumeKey?: string }): Promise<GenResult>;
+  generate(req: { prompt: string; resumeKey?: string; character?: SoulReference }): Promise<GenResult>;
 }
 
 export interface VideoGen {
@@ -41,4 +45,15 @@ export interface Planner {
   plan(req: PlanRequest): Promise<Storyboard>;
 }
 
-export type Providers = { image: ImageGen; video: VideoGen; uploader: MediaUploader; voice: VoiceGen };
+export interface Transcriber {
+  /** Part of every transcript cache key, so fake and real transcripts never share one. */
+  readonly model: string;
+  transcribe(audioPath: string): Promise<{ transcript: Transcript; requestId?: string }>;
+}
+
+export interface MusicGen {
+  readonly model: string;
+  compose(req: { prompt: string; durationMs: number }): Promise<{ audio: Buffer; ext: "mp3" | "wav" }>;
+}
+
+export type Providers = { image: ImageGen; video: VideoGen; uploader: MediaUploader; voice: VoiceGen; transcriber: Transcriber; music: MusicGen };

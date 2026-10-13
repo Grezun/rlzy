@@ -202,6 +202,30 @@ export type Database = {
           },
         ]
       }
+      soul_characters: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          name: string
+          reference_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          name: string
+          reference_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          name?: string
+          reference_id?: string
+        }
+        Relationships: []
+      }
       storyboards: {
         Row: {
           created_at: string
@@ -242,6 +266,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      team_music: {
+        Row: {
+          created_at: string
+          created_by: string
+          duration_sec: number
+          id: string
+          mood: string
+          storage_path: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string
+          duration_sec: number
+          id?: string
+          mood: string
+          storage_path: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          duration_sec?: number
+          id?: string
+          mood?: string
+          storage_path?: string
+          title?: string
+        }
+        Relationships: []
       }
     }
     Views: {

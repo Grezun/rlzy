@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyPipelineEvent, emptyProgress, GenerateJobPayloadSchema, JobProgressSchema, renderPaths } from "./index";
+import { applyPipelineEvent, emptyProgress, GenerateJobPayloadSchema, IngestFootageJobPayloadSchema, JobProgressSchema, PlanFootageJobPayloadSchema, renderPaths } from "./index";
 
 describe("@reel/db", () => {
   it("folds pipeline events into job progress", () => {
@@ -33,5 +33,40 @@ describe("@reel/db", () => {
   it("validates generate payloads", () => {
     expect(GenerateJobPayloadSchema.safeParse({ storyboardId: "not-a-uuid" }).success).toBe(false);
     expect(GenerateJobPayloadSchema.parse({ storyboardId: "0b5f7a2e-8c2d-4b8a-9f3e-2a1c5d6e7f80" }).storyboardId).toBeTruthy();
+  });
+});
+
+describe("footage payloads and progress", () => {
+  it("validates the ingest payload path", () => {
+    const settings = { language: "he", targetDurationSec: 30 };
+    const id = "0b5f8f9e-5c1d-4a43-9d4e-2f1c3b4a5d6e";
+    expect(IngestFootageJobPayloadSchema.parse({ storagePath: `footage/${id}/source.mp4`, settings }).storagePath).toContain(id);
+    expect(() => IngestFootageJobPayloadSchema.parse({ storagePath: "footage/x/source.mp4", settings })).toThrow();
+  });
+  it("accepts footage steps and appends notes", () => {
+    let p = applyPipelineEvent(emptyProgress(), { type: "step", step: "transcribe", status: "running" });
+    p = applyPipelineEvent(p, { type: "note", message: "AI music failed twice" });
+    p = applyPipelineEvent(p, { type: "note", message: "No sound effects" });
+    expect(JobProgressSchema.parse(p)).toEqual({ steps: { transcribe: "running" }, scenes: {}, notes: ["AI music failed twice", "No sound effects"] });
+  });
+  it("validates the plan-footage payload", () => {
+    const base = {
+      settings: { language: "he", targetDurationSec: 30 },
+      source: { assetId: "a".repeat(64), durationMs: 9000, transcriptAssetId: "b".repeat(64), faceTrackAssetId: "c".repeat(64) },
+    };
+    expect(PlanFootageJobPayloadSchema.parse(base).instruction).toBeUndefined();
+    expect(() => PlanFootageJobPayloadSchema.parse({ ...base, instruction: "x".repeat(501) })).toThrow();
+    expect(() => PlanFootageJobPayloadSchema.parse({ ...base, fromStoryboardId: "not-a-uuid" })).toThrow();
+  });
+});
+
+describe("ingest payload extras", () => {
+  const id = "0b5f8f9e-5c1d-4a43-9d4e-2f1c3b4a5d6e";
+  const base = { storagePath: `footage/${id}/source.mp4`, settings: { language: "he", targetDurationSec: 30 } };
+  it("defaults to no extras and accepts up to 6", () => {
+    expect(IngestFootageJobPayloadSchema.parse(base).extras).toEqual([]);
+    const extras = Array.from({ length: 6 }, (_, i) => ({ storagePath: `footage/${id}/extra-${i + 1}.jpg`, label: `p${i}` }));
+    expect(IngestFootageJobPayloadSchema.parse({ ...base, extras }).extras).toHaveLength(6);
+    expect(() => IngestFootageJobPayloadSchema.parse({ ...base, extras: [...extras, extras[0]] })).toThrow();
   });
 });

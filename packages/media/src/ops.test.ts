@@ -2,9 +2,9 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
-import { conformVideo, extractAudio, fitDuration, sliceAudio, trimTrailingSilence } from "./ops";
+import { conformClip, conformPhoto, conformVideo, extractAudio, fitDuration, sliceAudio, trimTrailingSilence } from "./ops";
 import { probe } from "./probe";
-import { makeTestTone, makeTestVideo } from "./testing";
+import { addExifOrientation, makeTestImage, makeTestTone, makeTestVideo } from "./testing";
 
 const FRAME = 1 / 30;
 let dir: string;
@@ -86,4 +86,54 @@ describe("audio ops", () => {
     expect(d).toBeGreaterThan(2.05);
     expect(d).toBeLessThan(2.3);
   });
+});
+
+describe("conformClip", () => {
+  it("fits a clip inside 1080×1920 without cropping, at 30 fps, silent, at most maxSec long", async () => {
+    const wide = join(dir, "wide-12s.mp4");
+    await makeTestVideo(wide, { durationSec: 12, width: 1280, height: 720, fps: 25, withAudio: true });
+    const out = join(dir, "clip.mp4");
+    await conformClip(wide, out);
+    const info = await probe(out);
+    expect(info.video!.width).toBe(1080);
+    expect(info.video!.height).toBeGreaterThanOrEqual(606);
+    expect(info.video!.height).toBeLessThanOrEqual(608);
+    expect(info.video!.fps).toBeCloseTo(30, 3);
+    expect(info.audio).toBeUndefined();
+    expect(info.durationSec).toBeLessThanOrEqual(10.05);
+    const tall = join(dir, "tall.mp4");
+    await makeTestVideo(tall, { durationSec: 2, width: 720, height: 1280 });
+    await conformClip(tall, join(dir, "tall-out.mp4"));
+    expect((await probe(join(dir, "tall-out.mp4"))).video).toMatchObject({ width: 1080, height: 1920 });
+  }, 120_000);
+});
+
+describe("conformPhoto", () => {
+  it("writes a phone photo upright, so probe reports the size the reel shows", async () => {
+    const wide = join(dir, "raw.jpg");
+    await makeTestImage(wide, { width: 400, height: 300 });
+    const phone = join(dir, "phone.jpg");
+    await addExifOrientation(wide, phone, 6);
+    expect((await probe(phone)).video).toMatchObject({ width: 400, height: 300 }); // probe ignores the orientation
+    await conformPhoto(phone, join(dir, "upright.jpg"));
+    expect((await probe(join(dir, "upright.jpg"))).video).toMatchObject({ width: 300, height: 400 });
+    await conformPhoto(phone, join(dir, "upright.png"));
+    expect((await probe(join(dir, "upright.png"))).video).toMatchObject({ width: 300, height: 400 });
+    await conformPhoto(wide, join(dir, "plain.jpg"));
+    expect((await probe(join(dir, "plain.jpg"))).video).toMatchObject({ width: 400, height: 300 });
+  }, 60_000);
+  it("downsizes a large photo so its long side is 2160 px (even sizes), after the rotation, and never upscales", async () => {
+    const big = join(dir, "big.jpg");
+    await makeTestImage(big, { width: 3000, height: 2000 });
+    await conformPhoto(big, join(dir, "big-out.jpg"));
+    expect((await probe(join(dir, "big-out.jpg"))).video).toMatchObject({ width: 2160, height: 1440 });
+    const tall = join(dir, "tall.jpg");
+    await addExifOrientation(big, tall, 6); // a phone photo: 3000×2000 raw, shown 2000×3000
+    await conformPhoto(tall, join(dir, "tall-out.png"));
+    expect((await probe(join(dir, "tall-out.png"))).video).toMatchObject({ width: 1440, height: 2160 });
+    const small = join(dir, "small.png");
+    await makeTestImage(small, { width: 640, height: 480 });
+    await conformPhoto(small, join(dir, "small-out.png"));
+    expect((await probe(join(dir, "small-out.png"))).video).toMatchObject({ width: 640, height: 480 });
+  }, 60_000);
 });

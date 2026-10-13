@@ -1,8 +1,10 @@
 import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { requireRealCredentials, type EngineConfig } from "../config";
+import { houseStyle } from "@reel/video/house-style";
+import { claudeEditDraftModel, createFootagePlanner, type FootagePlanner } from "../footage-planner";
 import { claudeDraftModel, createPlanner } from "../planner";
-import { ElevenLabsVoice, sdkElevenLabs } from "./elevenlabs";
+import { ElevenLabsMusic, ElevenLabsVoice, ScribeTranscriber, sdkElevenLabs, sdkElevenLabsFootage } from "./elevenlabs";
 import { FilePendingStore } from "../pending-store";
 import { createFakeProviders } from "./fake";
 import { httpHiggsfieldApi } from "./higgsfield-api";
@@ -16,11 +18,14 @@ export function createProviders(config: EngineConfig, workDir: string, opts?: { 
   const api = httpHiggsfieldApi(credentials, config.higgsfield.baseUrl);
   const pending = new FilePendingStore(path.join(config.cacheDir, "pending"));
   const gateway = new HiggsfieldGateway(api, pending, config.higgsfield.concurrency, { log: opts?.log ?? ((m) => console.log(m)) });
+  const footageApi = sdkElevenLabsFootage(config.elevenlabs.apiKey!);
   return {
     image: new HiggsfieldImageGen(gateway, config.higgsfield.imageModel),
     video: new HiggsfieldVideoGen(gateway, config.higgsfield.videoModel, config.higgsfield.videoResolution, config.higgsfield.maxWaitMinutes * 60_000),
     uploader: new HiggsfieldUploader(credentials, config.higgsfield.baseUrl),
     voice: new ElevenLabsVoice(sdkElevenLabs(config.elevenlabs.apiKey!)),
+    transcriber: new ScribeTranscriber(footageApi),
+    music: new ElevenLabsMusic(footageApi),
   };
 }
 
@@ -28,4 +33,10 @@ export function createProviders(config: EngineConfig, workDir: string, opts?: { 
 export function createPlannerFor(config: EngineConfig, workDir: string): Planner {
   if (config.providers === "fake") return createFakeProviders({ workDir }).planner;
   return createPlanner(claudeDraftModel(new Anthropic(), config.claudeModel));
+}
+
+/** Footage planning needs only Claude. */
+export function createFootagePlannerFor(config: EngineConfig, workDir: string): FootagePlanner {
+  if (config.providers === "fake") return createFakeProviders({ workDir }).footagePlanner;
+  return createFootagePlanner(claudeEditDraftModel(new Anthropic(), config.claudeModel), houseStyle.edit);
 }

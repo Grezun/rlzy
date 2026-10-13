@@ -18,6 +18,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           <Link href="/">Reel Studio</Link>
           {email && (
             <form action={signOut} className="row">
+              <Link href="/settings/music">Music</Link>
+              <Link href="/settings/characters">Characters</Link>
               <span className="muted">{email}</span>
               <button type="submit">Sign out</button>
             </form>

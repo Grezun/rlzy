@@ -1,4 +1,7 @@
 import { SpendCapError, UnknownCostModelError } from "./errors";
+import type { PlacedCutaway } from "./footage/cutaways";
+import { DEFAULT_MODELS } from "./models";
+import type { CutawaySource, EditPlan } from "./schema/edit-plan";
 import type { Language, Storyboard } from "./schema/storyboard";
 
 export type CostTable = Record<string, { perImage?: number; perSecond?: number; per1kChars?: number }>;
@@ -11,6 +14,10 @@ export const DEFAULT_COST_TABLE: CostTable = {
   "higgsfield-ai/soul/v2/standard": { perImage: 0.04 },
   "bytedance/seedance-2.5/image-to-video": { perSecond: 0.08 },
   "elevenlabs/eleven_v4": { per1kChars: 0.3 },
+  // Scribe: about $0.40 per hour of audio (spec §4.2).
+  "elevenlabs/scribe_v2": { perSecond: 0.4 / 3600 },
+  // ElevenLabs Music: a planning number. Check it against the team's ElevenLabs plan before the first paid run.
+  "elevenlabs/music": { perSecond: 0.01 },
 };
 
 export const WORDS_PER_SECOND: Record<Language, number> = { he: 2.3, en: 2.6 };
@@ -27,7 +34,7 @@ export function videoBillSeconds(sceneSec: number): number {
 export type CostLine = { item: string; model: string; quantity: number; unit: string; usd: number };
 export type CostEstimate = { totalUsd: number; lines: CostLine[] };
 
-function price(table: CostTable, model: string, key: "perImage" | "perSecond" | "per1kChars"): number {
+export function unitPrice(table: CostTable, model: string, key: "perImage" | "perSecond" | "per1kChars"): number {
   const value = table[model]?.[key];
   if (value === undefined) throw new UnknownCostModelError(model);
   return value;
@@ -43,19 +50,55 @@ export function estimateCost(
     const kind = scene.visual.kind;
     if (kind === "image" || kind === "broll_video") {
       const model = scene.visual.model && kind === "image" ? scene.visual.model : models.image;
-      lines.push({ item: `image ${scene.id}`, model, quantity: 1, unit: "image", usd: price(table, model, "perImage") });
+      lines.push({ item: `image ${scene.id}`, model, quantity: 1, unit: "image", usd: unitPrice(table, model, "perImage") });
     }
     if (kind === "broll_video") {
       const model = scene.visual.model ?? models.video;
       const seconds = videoBillSeconds(estimateSceneSeconds(scene.script, sb.language));
-      lines.push({ item: `video ${scene.id}`, model, quantity: seconds, unit: "s", usd: seconds * price(table, model, "perSecond") });
+      lines.push({ item: `video ${scene.id}`, model, quantity: seconds, unit: "s", usd: seconds * unitPrice(table, model, "perSecond") });
     }
   }
   if (sb.voice) {
     const chars = sb.scenes.map((s) => s.script).join(" ").length;
-    lines.push({ item: "voice", model: models.voice, quantity: chars, unit: "chars", usd: (chars / 1000) * price(table, models.voice, "per1kChars") });
+    lines.push({ item: "voice", model: models.voice, quantity: chars, unit: "chars", usd: (chars / 1000) * unitPrice(table, models.voice, "per1kChars") });
   }
   return { totalUsd: lines.reduce((sum, l) => sum + l.usd, 0), lines };
+}
+
+/**
+ * The one rule for billable reel seconds (footage estimate and music generation both use it): whole seconds, rounded up
+ * from the exact length. The length is first rounded to whole ms so float noise (210 frames = 7000.0000001 ms) is not
+ * billed as a started second. Never round to 0.1 s first: 7033 ms is 8 billable seconds, not 7.
+ */
+export function estimateReelSeconds(durationMs: number): number {
+  return Math.ceil(Math.round(durationMs) / 1000);
+}
+
+/** ElevenLabs Music's length limits. The provider clamps to them, so billing (and the estimate) starts at the minimum. */
+export const MUSIC_MIN_MS = 3000;
+export const MUSIC_MAX_MS = 600_000;
+
+/** Billed seconds of AI music for a reel of `reelSeconds` (from estimateReelSeconds): never below the provider minimum. */
+export function musicBillSeconds(reelSeconds: number): number {
+  return Math.max(Math.ceil(reelSeconds), MUSIC_MIN_MS / 1000);
+}
+
+/** Rounds USD up to the cent (float noise on an exact cent, e.g. 0.1 + 0.2, stays on that cent). */
+export function ceilToCent(usd: number): number {
+  return Math.ceil(Math.round(usd * 1e6) / 1e4) / 100;
+}
+
+/** One cutaway's generation price in USD (spec §4.4): AI stills on the Soul model, AI clips animate that still. */
+export function cutawayCost(source: CutawaySource, durationMs: number, table: CostTable = DEFAULT_COST_TABLE): number {
+  if (source.kind !== "ai_broll" && source.kind !== "ai_self") return 0;
+  const image = unitPrice(table, DEFAULT_MODELS.image, "perImage");
+  return source.media === "video" ? image + videoBillSeconds(durationMs / 1000) * unitPrice(table, DEFAULT_MODELS.video, "perSecond") : image;
+}
+
+/** Generation spend of an approved footage plan, in USD: AI music fitted to the reel plus every placed AI cutaway. */
+export function estimateFootageCost(plan: Pick<EditPlan, "music">, durationSec: number, table: CostTable = DEFAULT_COST_TABLE, placed: PlacedCutaway[] = []): number {
+  const music = plan.music.kind === "ai" ? musicBillSeconds(durationSec) * unitPrice(table, "elevenlabs/music", "perSecond") : 0;
+  return music + placed.reduce((sum, c) => sum + cutawayCost(c.source, (c.durationInFrames * 1000) / 30, table), 0);
 }
 
 export function assertWithinCap(estimate: CostEstimate, capUsd: number): void {
