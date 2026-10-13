@@ -1,8 +1,8 @@
-import { FaceTrackSchema, FOOTAGE_MAX_SEC_INGEST, formatMinSec, TranscriptSchema, type FaceTrack, type FootageSource, type PipelineEvent, type Transcript, type VoiceSegment } from "@reel/core";
+import { FaceTrackSchema, FOOTAGE_MAX_SEC_INGEST, formatMinSec, TranscriptSchema, type FaceTrack, type FootageExtra, type FootageSource, type PipelineEvent, type Transcript, type VoiceSegment } from "@reel/core";
 import { inputHash } from "@reel/core/hash";
-import { conformVideo, extractAudio, probe, sha256File } from "@reel/media";
+import { conformClip, conformPhoto, conformVideo, extractAudio, probe, sha256File } from "@reel/media";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { extname, join } from "node:path";
 import type * as z from "zod";
 import type { AssetStore, StoredAsset } from "./asset-store";
 import type { FaceTracker } from "./face-tracker";
@@ -42,7 +42,7 @@ async function readJson<T>(asset: StoredAsset, schema: z.ZodType<T>): Promise<T>
 }
 
 /** Spec §4.2: probe, working copy, face track, transcript. Every step is a cached asset, so a retry skips finished work. */
-export async function ingestFootage(originalPath: string, deps: IngestDeps): Promise<{ source: FootageSource; transcript: Transcript }> {
+export async function ingestFootage(originalPath: string, deps: IngestDeps, extraFiles: { path: string; label: string }[] = []): Promise<{ source: FootageSource; transcript: Transcript; warnings: string[] }> {
   const { store, log } = deps;
   const emit = (e: PipelineEvent) => deps.onEvent?.(e);
   await mkdir(deps.tmpDir, { recursive: true });
@@ -87,7 +87,46 @@ export async function ingestFootage(originalPath: string, deps: IngestDeps): Pro
   const transcript = await readJson(transcriptAsset, TranscriptSchema);
   if (transcript.words.length < 5) throw new FootageInputError("No speech found. This editor needs a video of you talking.");
   emit({ type: "step", step: "transcribe", status: "done" });
-  return { source: { assetId: working.hash, durationMs, transcriptAssetId: transcriptAsset.hash, faceTrackAssetId: faces.hash, extras: [] }, transcript };
+  // After transcription: extras are free, and an upload without speech should fail before any work on them.
+  const { extras, warnings } = await ingestExtras(extraFiles, deps);
+  return { source: { assetId: working.hash, durationMs, transcriptAssetId: transcriptAsset.hash, faceTrackAssetId: faces.hash, extras }, transcript, warnings };
+}
+
+/** Extra photos and clips (cutaway material). Unreadable files are left out with a warning, never failing the upload. */
+export async function ingestExtras(files: { path: string; label: string }[], deps: Pick<IngestDeps, "store" | "tmpDir" | "log">): Promise<{ extras: FootageExtra[]; warnings: string[] }> {
+  const extras: FootageExtra[] = [];
+  const warnings: string[] = [];
+  for (const [i, f] of files.entries()) {
+    const ext = extname(f.path).slice(1).toLowerCase();
+    const kind = ext === "mp4" || ext === "mov" ? "video" : "image";
+    const info = await probe(f.path).catch(() => null);
+    if (!info?.video?.width || (kind === "video" && !(info.video.durationSec > 0))) {
+      warnings.push(`The extra file "${f.label}" couldn't be read, so it was left out.`);
+      continue;
+    }
+    const sha = await sha256File(f.path);
+    // Not `reproducible`: generation has no way to remake an extra, so a failed mirror must fail ingest (a retry is free)
+    // rather than leave the extra on this machine only.
+    const asset = await cached(deps.store, footageHashes.extra(sha, kind), async () => {
+      if (kind === "image") {
+        // Upright (EXIF orientation applied): probe reports a phone photo's raw size, Chrome shows it rotated.
+        const photoExt = ext === "jpg" || ext === "jpeg" ? "jpg" : "png";
+        const out = join(deps.tmpDir, `extra-${i + 1}.${photoExt}`);
+        await conformPhoto(f.path, out);
+        return { path: out, ext: photoExt, meta: { kind: "image", provider: "ffmpeg", extra: { sha } } };
+      }
+      deps.log(`ingest: fitting extra clip ${i + 1}`);
+      const out = join(deps.tmpDir, `extra-${i + 1}.mp4`);
+      await conformClip(f.path, out);
+      return { path: out, ext: "mp4", meta: { kind: "video", provider: "ffmpeg", extra: { sha } } };
+    });
+    const stored = await probe(asset.path);
+    extras.push({
+      assetId: asset.hash, kind, width: stored.video!.width, height: stored.video!.height,
+      durationMs: kind === "video" ? Math.round(stored.video!.durationSec * 1000) : 0, label: f.label,
+    });
+  }
+  return { extras, warnings };
 }
 
 /** The conformed 1080×1920 working copy, keyed by the original's hash (ffmpeg only, so remaking it is free). */

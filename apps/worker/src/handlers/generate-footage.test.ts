@@ -29,7 +29,7 @@ async function approvedPlan() {
   record.status = "approved";
   await makeSfxPlaceholders(join(dir, "sfx"), SFX_NAMES);
   const inputModels = { transcriber: providers.transcriber.model, faceTracker: noFaceTracker.model };
-  const deps = { music: providers.music, store, blobs, db, sfxDir: join(dir, "sfx"), spendCapUsd: 10, inputModels };
+  const deps = { music: providers.music, image: providers.image, video: providers.video, uploader: providers.uploader, store, blobs, db, sfxDir: join(dir, "sfx"), spendCapUsd: 10, inputModels };
   return { dir, record, deps, db, blobs, providers, store };
 }
 

@@ -1,6 +1,6 @@
-import { faceHelperAvailable, FIXTURE_TALKING_HEAD, makeTestVideo, probe, runFfmpeg } from "@reel/media";
+import { addExifOrientation, faceHelperAvailable, FIXTURE_TALKING_HEAD, makeTestImage, makeTestVideo, probe, runFfmpeg } from "@reel/media";
 import { existsSync } from "node:fs";
-import { copyFile, mkdtemp, readFile, unlink } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -189,4 +189,29 @@ describe("cutaway cache keys", () => {
     expect(footageHashes.cutawayFit("x".repeat(64), 2000)).not.toBe(footageHashes.cutawayFit("x".repeat(64), 2033));
     expect(footageHashes.extra("y".repeat(64), "image")).not.toBe(footageHashes.extra("y".repeat(64), "video"));
   });
+});
+
+describe("ingest extras", () => {
+  it("stores photos as they are, fits clips inside 1080×1920 (first 10 s), and leaves out unreadable files with a warning", async () => {
+    const { dir, deps } = await setup();
+    await makeTestVideo(join(dir, "talk.mp4"), { durationSec: 4, width: 720, height: 1280, withAudio: true });
+    await makeTestImage(join(dir, "shot.png"), { width: 1920, height: 1080 });
+    await makeTestVideo(join(dir, "demo.mov"), { durationSec: 12, width: 1280, height: 720 });
+    await makeTestImage(join(dir, "raw.jpg"), { width: 400, height: 300 });
+    await addExifOrientation(join(dir, "raw.jpg"), join(dir, "phone.jpg"), 6);
+    await writeFile(join(dir, "bad.jpg"), "not an image");
+    const { source, warnings } = await ingestFootage(join(dir, "talk.mp4"), deps, [
+      { path: join(dir, "shot.png"), label: "צילום מסך" },
+      { path: join(dir, "demo.mov"), label: "demo" },
+      { path: join(dir, "phone.jpg"), label: "phone" },
+      { path: join(dir, "bad.jpg"), label: "bad" },
+    ]);
+    expect(source.extras.map((e) => [e.kind, e.width, e.label])).toEqual([["image", 1920, "צילום מסך"], ["video", 1080, "demo"], ["image", 300, "phone"]]);
+    expect(source.extras[2].height).toBe(400);
+    expect(source.extras[1].durationMs).toBeGreaterThan(9900);
+    expect(source.extras[1].durationMs).toBeLessThanOrEqual(10_050);
+    expect((await deps.store.get(source.extras[0].assetId))!.fileName).toMatch(/\.png$/);
+    expect((await deps.store.get(source.extras[2].assetId))!.fileName).toMatch(/\.jpg$/);
+    expect(warnings).toEqual(['The extra file "bad" couldn\'t be read, so it was left out.']);
+  }, 300_000);
 });

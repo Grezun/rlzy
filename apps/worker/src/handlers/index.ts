@@ -43,7 +43,8 @@ export function buildHandlers(deps: BuildHandlersDeps): Handlers {
     plan_footage: createPlanFootageHandler(footage),
     // Same models as ingest: a plan built on another worker's transcript or face track (fake vs real) is refused before any spend.
     generate_footage: createGenerateFootageHandler({
-      music: deps.providers.music, store: deps.store, blobs: deps.blobs, db: deps.db, sfxDir: deps.sfxDir, spendCapUsd: deps.spendCapUsd,
+      music: deps.providers.music, image: deps.providers.image, video: deps.providers.video, uploader: deps.providers.uploader,
+      store: deps.store, blobs: deps.blobs, db: deps.db, sfxDir: deps.sfxDir, spendCapUsd: deps.spendCapUsd,
       inputModels: { transcriber: deps.transcriber.model, faceTracker: deps.faceTracker.model },
     }),
   };

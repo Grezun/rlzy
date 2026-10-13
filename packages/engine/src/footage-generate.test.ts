@@ -20,7 +20,7 @@ async function prepared(music: EditPlan["music"] = { kind: "none" }) {
   const planned = await providers.footagePlanner.plan({ settings: { language: "he", targetDurationSec: 15, ctaKeyword: "AI" }, source, transcript, library: [], warnings: [] });
   const plan = parseEditPlan({ ...planned, music });
   await makeSfxPlaceholders(join(dir, "sfx"), SFX_NAMES);
-  const deps = { music: providers.music, store, tmpDir: join(dir, "g"), log: () => {}, library: async () => null, sfxDir: join(dir, "sfx"), style: houseStyle.edit };
+  const deps = { music: providers.music, image: providers.image, video: providers.video, uploader: providers.uploader, character: null, store, tmpDir: join(dir, "g"), log: () => {}, library: async () => null, sfxDir: join(dir, "sfx"), style: houseStyle.edit };
   return { dir, providers, plan, deps };
 }
 
@@ -72,5 +72,30 @@ describe("generateFootageAssets + renderFootage (fake music, placeholder sfx, re
     const gone = await generateFootageAssets(plan, { ...deps, library: async () => null, sfxDir: null });
     expect(gone.notes).toEqual(["The library track was removed, so the reel has no music.", "Sound effects aren't installed on this worker yet, so the reel has none."]);
     expect(buildFootageTimeline(plan, gone, (f) => `asset:${f}`, houseStyle.edit).sfx).toBeUndefined();
+  }, 300_000);
+
+  // The 6 s test video plans as b1 = frames 0–81 and b2 = 81–166, with the CTA card from frame 91: cutaways go on b1.
+  it("renders an AI cutaway (split) within the estimate and lists cutaway steps", async () => {
+    const { dir, plan: p, deps, providers } = await prepared();
+    const cut = { source: { kind: "ai_broll" as const, prompt: "laptop", media: "image" as const }, layout: "split" as const, atMs: 0, durationMs: 1000 };
+    const plan = parseEditPlan({ ...p, beats: p.beats.map((b) => (b.id === "b1" ? { ...b, cutaway: cut } : b)), estimate: { ...p.estimate, credits: 0.04 } });
+    const gen = await generateFootageAssets(plan, deps);
+    expect(gen.notes).toEqual([]);
+    expect(Object.keys(gen.cutaways)).toEqual(["b1"]);
+    const out = await renderFootage(plan, gen, deps, join(dir, "out"));
+    expect(out.timeline.cutaways).toHaveLength(1);
+    expect(out.timeline.clips.some((c) => c.layout === "split")).toBe(true);
+    expect((await probe(out.reel)).video).toMatchObject({ width: 1080, height: 1920 });
+    expect(providers.calls.image).toBe(1);
+  }, 900_000);
+
+  it("adds the placement warnings to the generation notes, before paying for anything", async () => {
+    const { plan: p, deps, providers } = await prepared();
+    const cut = { source: { kind: "ai_broll" as const, prompt: "laptop", media: "image" as const }, layout: "full" as const, atMs: 0, durationMs: 1000 };
+    const plan = parseEditPlan({ ...p, beats: p.beats.map((b) => (b.id === "b2" ? { ...b, cutaway: cut } : b)), estimate: { ...p.estimate, credits: 1 } });
+    const gen = await generateFootageAssets(plan, deps);
+    expect(gen.notes).toEqual(["The cutaway in b2 was dropped: it ran under the CTA card."]);
+    expect(gen.cutaways).toEqual({});
+    expect(providers.calls.image).toBe(0);
   }, 300_000);
 });

@@ -1,17 +1,23 @@
-import { compileFootage, estimateFootageCost, estimateReelSeconds, musicBillSeconds, SFX_NAMES, type EditPlan, type EditStyle, type PipelineEvent, type SfxName, type Timeline } from "@reel/core";
+import { compileFootage, estimateFootageCost, estimateReelSeconds, musicBillSeconds, planCutaways, SFX_NAMES, type EditPlan, type EditStyle, type PipelineEvent, type SfxName, type Timeline } from "@reel/core";
 import { concatAudioSegments, fitMusic, makeSfxPlaceholders, normalizeLoudness, sha256File, SOCIAL_LOUDNESS } from "@reel/media";
 import { missingSfx, SFX_DIR, sfxFileIn } from "@reel/video/sfx";
 import { mkdir, writeFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import type { AssetStore, StoredAsset } from "./asset-store";
+import { generateCutaways, makeBudget, takeBudget, type CutawayAssets } from "./footage-cutaways";
 import { footageHashes, loadFootageInputs, type FootageInputs, type OriginalFetch } from "./footage-ingest";
 import { cached, estUsd, renderTimeline, type RenderOutputs } from "./pipeline";
-import type { MusicGen } from "./providers/types";
+import type { ImageGen, MediaUploader, MusicGen, SoulReference, VideoGen } from "./providers/types";
 import { serveDir } from "./serve";
 
 export type LibraryFetch = (trackId: string, destDir: string) => Promise<string | null>;
 export type FootageGenDeps = {
   music: MusicGen;
+  image: ImageGen;
+  video: VideoGen;
+  uploader: MediaUploader;
+  /** The plan's Soul ID character, or null when it has none or it was deleted (its AI shots of you are skipped). */
+  character: SoulReference | null;
   store: AssetStore;
   tmpDir: string;
   log: (m: string) => void;
@@ -22,11 +28,14 @@ export type FootageGenDeps = {
   /** The original upload, to re-make a working copy that was lost (free: ffmpeg only). */
   original?: OriginalFetch;
 };
-export type FootageGenerated = { inputs: FootageInputs; voice: StoredAsset; music?: StoredAsset; sfx: Partial<Record<SfxName, StoredAsset>>; notes: string[] };
+export type FootageGenerated = { inputs: FootageInputs; voice: StoredAsset; music?: StoredAsset; sfx: Partial<Record<SfxName, StoredAsset>>; cutaways: CutawayAssets; notes: string[] };
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-/** Spec §4.4 for plan 1: cut voice, music (library, AI or none), sound effects. A failed optional element is a note, never a failure. */
+/**
+ * Spec §4.4: cut voice, music (library, AI or none), cutaways, sound effects. A failed optional element is a note, never a failure.
+ * Every paid element is reserved against the approved estimate before it is paid; one that doesn't fit is skipped with a note.
+ */
 export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps): Promise<FootageGenerated> {
   const { store, log } = deps;
   const emit = (e: PipelineEvent) => deps.onEvent?.(e);
@@ -35,6 +44,7 @@ export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps
   const inputs = await loadFootageInputs(store, plan.source, deps.original && { original: deps.original, tmpDir: deps.tmpDir, log });
   const draft = compileFootage(plan, inputs.transcript, inputs.faceTrack, { videoSrc: "draft", sfx: {} }, deps.style);
   const notes: string[] = [];
+  const budget = makeBudget(plan.estimate.credits);
 
   emit({ type: "step", step: "voice", status: "running" });
   const voice = await cached(store, footageHashes.voice(inputs.working.hash, draft.voiceSegments), async () => {
@@ -70,7 +80,7 @@ export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps
     }
   } else if (plan.music.kind === "ai") {
     const prompt = plan.music.prompt;
-    if (estimateFootageCost(plan, billSec) > plan.estimate.credits + 1e-9) {
+    if (!takeBudget(budget, estimateFootageCost(plan, billSec))) {
       notes.push("AI music was skipped: it would cost more than the approved estimate. Use Edit as new version and approve again to update it.");
     } else {
       // Exactly one paid generation per job: the approved estimate covers one track, and a failure after the provider
@@ -91,6 +101,14 @@ export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps
   }
   emit({ type: "step", step: "music", status: "done" });
 
+  emit({ type: "step", step: "visuals", status: "running" });
+  const { placed, warnings: placementNotes } = planCutaways(plan, inputs.transcript.words, deps.style);
+  // Spec §5.5: every trim or drop is also a generation note (the review page showed the same lines before approval).
+  notes.push(...placementNotes);
+  const cut = await generateCutaways(placed, plan, { image: deps.image, video: deps.video, uploader: deps.uploader, store, tmpDir: join(deps.tmpDir, "cutaways"), log, character: deps.character, budget });
+  notes.push(...cut.notes);
+  emit({ type: "step", step: "visuals", status: "done" });
+
   const sfx: Partial<Record<SfxName, StoredAsset>> = {};
   if (plan.sfx !== "off") {
     if (!deps.sfxDir) notes.push("Sound effects aren't installed on this worker yet, so the reel has none.");
@@ -104,7 +122,7 @@ export async function generateFootageAssets(plan: EditPlan, deps: FootageGenDeps
     }
   }
   for (const n of notes) emit({ type: "note", message: n });
-  return { inputs, voice, music, sfx, notes };
+  return { inputs, voice, music, sfx, cutaways: cut.assets, notes };
 }
 
 /** The footage Timeline for this plan + generated assets, with each asset file mapped through `urlFor`. */
@@ -115,6 +133,7 @@ export function buildFootageTimeline(plan: EditPlan, gen: FootageGenerated, urlF
     voiceSrc: urlFor(gen.voice.fileName),
     ...(gen.music ? { musicSrc: urlFor(gen.music.fileName) } : {}),
     sfx,
+    cutaways: Object.fromEntries(Object.entries(gen.cutaways).map(([id, c]) => [id, { kind: c.kind, src: urlFor(c.asset.fileName) }])),
   }, style).timeline;
 }
 
