@@ -16,6 +16,7 @@ export const FootageSettingsSchema = z.object({
   targetDurationSec: FootageTargetSchema,
   ctaKeyword: z.string().trim().min(1).max(30).optional(),
   notes: z.string().trim().min(1).max(2000).optional(),
+  characterId: z.uuid().optional(),
 });
 export type FootageSettings = z.infer<typeof FootageSettingsSchema>;
 
@@ -43,3 +44,43 @@ export function checkFootageFile(file: { name: string; size: number; durationSec
   }
   return errors;
 }
+
+export const EXTRA_MAX_FILES = 6;
+export const EXTRA_IMAGE_MAX_BYTES = 25 * 1024 ** 2;
+export const EXTRA_VIDEO_MAX_BYTES = 500 * 1024 ** 2;
+export type ExtraExt = "mp4" | "mov" | "jpg" | "jpeg" | "png" | "webp";
+const EXTRA_EXTS: readonly ExtraExt[] = ["mp4", "mov", "jpg", "jpeg", "png", "webp"];
+export const EXTRA_PATH_RE = /^footage\/[0-9a-f-]{36}\/extra-[1-6]\.(mp4|mov|jpg|jpeg|png|webp)$/;
+
+export function extraExt(fileName: string): ExtraExt | null {
+  const ext = fileName.includes(".") ? fileName.split(".").pop()!.toLowerCase() : "";
+  return (EXTRA_EXTS as readonly string[]).includes(ext) ? (ext as ExtraExt) : null;
+}
+export const extraKind = (ext: ExtraExt): "image" | "video" => (ext === "mp4" || ext === "mov" ? "video" : "image");
+export const extraStoragePath = (projectId: string, n: number, ext: ExtraExt) => `footage/${projectId}/extra-${n}.${ext}`;
+/** A file name without its extension, trimmed, at most `max` characters (code points); `fallback` when nothing is left. */
+export function baseName(fileName: string, max: number, fallback: string): string {
+  const base = fileName.replace(/\.[^.]*$/, "").trim();
+  return base ? Array.from(base).slice(0, max).join("") : fallback;
+}
+export const extraLabel = (fileName: string) => baseName(fileName, 80, "Upload");
+
+/** Browser and server checks for the optional extra photos and clips (used as cutaways). */
+export function checkExtraFiles(files: { name: string; size: number }[]): string[] {
+  if (files.length > EXTRA_MAX_FILES) return [`Add at most ${EXTRA_MAX_FILES} extra files.`];
+  const errors: string[] = [];
+  for (const f of files) {
+    const ext = extraExt(f.name);
+    if (!ext) {
+      errors.push(`${f.name}: use a JPG, PNG or WEBP photo${/\.hei[cf]$/i.test(f.name) ? " (convert HEIC to JPG first)" : ""}, or an MP4 or MOV clip.`);
+      continue;
+    }
+    if (f.size === 0) errors.push(`${f.name} is empty.`);
+    else if (extraKind(ext) === "image" && f.size > EXTRA_IMAGE_MAX_BYTES) errors.push(`${f.name}: photos can be at most 25 MB.`);
+    else if (extraKind(ext) === "video" && f.size > EXTRA_VIDEO_MAX_BYTES) errors.push(`${f.name}: clips can be at most 500 MB.`);
+  }
+  return errors;
+}
+
+export const ExtraUploadSchema = z.object({ storagePath: z.string().regex(EXTRA_PATH_RE), label: z.string().trim().min(1).max(80) });
+export type ExtraUpload = z.infer<typeof ExtraUploadSchema>;

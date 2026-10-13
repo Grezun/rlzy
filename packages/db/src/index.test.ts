@@ -59,3 +59,14 @@ describe("footage payloads and progress", () => {
     expect(() => PlanFootageJobPayloadSchema.parse({ ...base, fromStoryboardId: "not-a-uuid" })).toThrow();
   });
 });
+
+describe("ingest payload extras", () => {
+  const id = "0b5f8f9e-5c1d-4a43-9d4e-2f1c3b4a5d6e";
+  const base = { storagePath: `footage/${id}/source.mp4`, settings: { language: "he", targetDurationSec: 30 } };
+  it("defaults to no extras and accepts up to 6", () => {
+    expect(IngestFootageJobPayloadSchema.parse(base).extras).toEqual([]);
+    const extras = Array.from({ length: 6 }, (_, i) => ({ storagePath: `footage/${id}/extra-${i + 1}.jpg`, label: `p${i}` }));
+    expect(IngestFootageJobPayloadSchema.parse({ ...base, extras }).extras).toHaveLength(6);
+    expect(() => IngestFootageJobPayloadSchema.parse({ ...base, extras: [...extras, extras[0]] })).toThrow();
+  });
+});

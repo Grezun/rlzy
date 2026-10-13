@@ -1,4 +1,4 @@
-import { FOOTAGE_PATH_RE, FootageSettingsSchema, FootageSourceSchema, PlanFormSchema, type PipelineEvent } from "@reel/core";
+import { ExtraUploadSchema, FOOTAGE_PATH_RE, FootageSettingsSchema, FootageSourceSchema, PlanFormSchema, type PipelineEvent } from "@reel/core";
 import * as z from "zod";
 import type { Database } from "./database.types";
 
@@ -19,7 +19,12 @@ export type AssetRow = Tables<"assets">;
 
 export const PlanJobPayloadSchema = PlanFormSchema;
 export const GenerateJobPayloadSchema = z.object({ storyboardId: z.uuid() });
-export const IngestFootageJobPayloadSchema = z.object({ storagePath: z.string().regex(FOOTAGE_PATH_RE), settings: FootageSettingsSchema });
+export const IngestFootageJobPayloadSchema = z.object({
+  storagePath: z.string().regex(FOOTAGE_PATH_RE),
+  settings: FootageSettingsSchema,
+  /** Extra photos and clips the user uploaded with the video (cutaway material). */
+  extras: z.array(ExtraUploadSchema).max(6).default([]),
+});
 export type IngestFootagePayload = z.infer<typeof IngestFootageJobPayloadSchema>;
 export const PlanFootageJobPayloadSchema = z.object({
   settings: FootageSettingsSchema,

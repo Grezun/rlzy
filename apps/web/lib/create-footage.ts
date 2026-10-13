@@ -47,7 +47,7 @@ export async function finishFootage(deps: FootageDeps, input: { projectId: strin
   if (!project || project.format !== "footage") return fail("This upload doesn't belong to this reel.");
   if (project.status !== "uploading") return queued("This video was already submitted.");
   if (!(await deps.objectExists(input.storagePath))) return { ok: false, errors: ["The upload didn't finish. Upload the video again."], uploadMissing: true };
-  const job = await deps.insertIngestJob(input.projectId, { storagePath: input.storagePath, settings: settings.data });
+  const job = await deps.insertIngestJob(input.projectId, { storagePath: input.storagePath, settings: settings.data, extras: [] });
   if ("error" in job) return job.code === "23505" ? queued("A job for this reel is already queued or running.") : fail(`Couldn't start: ${job.error}`);
   try {
     await deps.setStatus(input.projectId, "planning");

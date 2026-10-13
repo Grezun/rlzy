@@ -202,6 +202,30 @@ export type Database = {
           },
         ]
       }
+      soul_characters: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          name: string
+          reference_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          name: string
+          reference_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          name?: string
+          reference_id?: string
+        }
+        Relationships: []
+      }
       storyboards: {
         Row: {
           created_at: string

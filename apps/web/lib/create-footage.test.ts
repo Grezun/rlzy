@@ -40,7 +40,7 @@ describe("finishFootage", () => {
   it("queues ingest and moves the project to planning", async () => {
     const d = deps();
     expect(await finishFootage(d, input)).toEqual({ ok: true });
-    expect(d.insertIngestJob).toHaveBeenCalledWith(ID, { storagePath: input.storagePath, settings });
+    expect(d.insertIngestJob).toHaveBeenCalledWith(ID, { storagePath: input.storagePath, settings, extras: [] });
     expect(d.setStatus).toHaveBeenCalledWith(ID, "planning");
   });
   it("says the video is queued when only the status update fails", async () => {
